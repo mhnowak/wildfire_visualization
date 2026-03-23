@@ -1,7 +1,9 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(RSQLite, DBI, dplyr, ggplot2, scales, viridis, reactable)
 
-con <- dbConnect(RSQLite::SQLite(), "FPA_FOD_20170508.sqlite")
+db_path <- file.path(dirname(sys.frame(1)$ofile %||% "."), "FPA_FOD_20170508.sqlite")
+
+con <- dbConnect(RSQLite::SQLite(), db_path)
 
 fires <- tbl(con, "Fires") %>% collect()
 
