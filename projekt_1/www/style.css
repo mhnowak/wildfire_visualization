@@ -1,0 +1,116 @@
+:root {
+    --main-color: #599191;
+    --main-color-dark: #4b7a7a;
+    --accent-color: #ff7f50; 
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Maven+Pro:wght@400;700&family=Nunito:wght@400;600&display=swap');
+
+body, .content-wrapper, .box, .sidebar-menu, .info-box-content {
+    font-family: 'Nunito', sans-serif !important;
+}
+
+h1, h2, h3, h4, h5, h6, .box-title > li > a, .plot-title {
+    font-family: 'Maven Pro', sans-serif !important;
+    color: var(--main-color) !important;
+}
+
+.main-sidebar {
+    background-color: var(--main-color) !important;
+}
+
+.main-sidebar .sidebar-menu li a {
+    color: white !important;
+}
+
+.main-sidebar .sidebar-menu li.active a {
+    background-color: var(--main-color-dark) !important;
+}
+
+.main-header .navbar, .nav-tabs, .skin-blue .main-header .logo {
+    background-color: var(--main-color) !important;
+}
+
+.box {
+    border-top: 3px solid var(--main-color) !important;
+}
+
+.box.box-solid>.box-header {
+    background-color: var(--main-color) !important;
+    color: white !important;
+}
+
+.nav-tabs-custom>.nav-tabs>li.active {
+    background-color: var(--main-color) !important;
+}
+
+.nav-tabs-custom>.nav-tabs>li.active>a,
+.nav-tabs-custom>.nav-tabs>li.active>a:focus,
+.nav-tabs-custom>.nav-tabs>li.active>a:hover {
+    color: white !important;
+    font-family: 'Maven Pro', sans-serif !important;
+}
+
+.main-title {
+    font-family: 'Maven Pro', sans-serif !important;
+    color: var(--main-color) !important;
+    font-weight: 700;
+}
+
+.main-text {
+    font-family: 'Nunito', sans-serif !important;
+    color: #333 !important;
+    font-size: 16px;
+    line-height: 1.5;
+}
+
+.info-box, .small-box {
+    font-family: 'Nunito', sans-serif !important;
+}
+
+.checkboxGroupInput label {
+    font-family: 'Nunito', sans-serif !important;
+    color: #333 !important;
+}
+
+.action-button, .btn {
+    background-color: var(--main-color) !important;
+    border-color: var(--main-color-dark) !important;
+    color: white !important;
+}
+
+.action-button:hover, .btn:hover {
+    background-color: var(--main-color-dark) !important;
+    border-color: var(--main-color-dark) !important;
+    color: white !important;
+}
+
+.selected-causes {
+    background-color: var(--accent-color) !important;
+    color: white !important;
+}
+
+.nav-tabs-custom .nav-tabs > li > a {
+    font-weight: 700 !important;
+}
+
+.nav-tabs-custom .nav-tabs {
+    background-color: white !important;  
+}
+
+.nav-tabs-custom .nav-tabs > li.active > a,
+.nav-tabs-custom .nav-tabs > li.active > a:hover,
+.nav-tabs-custom .nav-tabs > li.active > a:focus {
+    color: var(--main-color) !important;
+    background-color: white !important;
+}
+
+.nav-tabs-custom .nav-tabs > li:not(.active) > a {
+    color: rgba(89,145,145,0.6) !important;
+    font-weight: 700 !important;
+    background-color: white !important;
+}
+
+.nav-tabs-custom .nav-tabs > li:not(.active) > a:hover {
+    color: var(--main-color) !important;
+}
