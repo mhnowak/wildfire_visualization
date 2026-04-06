@@ -4,7 +4,10 @@ pacman::p_load(
   tidyr, lubridate
 )
 
-con <- dbConnect(RSQLite::SQLite(), "FPA_FOD_20170508.sqlite")
+script_dir <- dirname(sys.frame(1)$ofile %||% ".")
+db_path <- file.path(script_dir, "..", "FPA_FOD_20170508.sqlite")
+
+con <- dbConnect(RSQLite::SQLite(), db_path)
 
 fires <- tbl(con, "Fires") |> collect()
 
