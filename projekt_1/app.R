@@ -1,10 +1,32 @@
-if (!require("pacman")) install.packages("pacman")
+if (!require("pacman")) {
+  install.packages("pacman")
+}
 pacman::p_load(
-  RSQLite, DBI, dplyr, ggplot2, scales, viridis, reactable,
-  tidyr, lubridate, shiny, shinydashboard, flexdashboard,
-  plotly, ggridges, stringr, ggdist
+  RSQLite,
+  DBI,
+  dplyr,
+  ggplot2,
+  scales,
+  viridis,
+  reactable,
+  tidyr,
+  lubridate,
+  shiny,
+  shinydashboard,
+  flexdashboard,
+  plotly,
+  ggridges,
+  stringr,
+  ggdist
 )
-theme(plot.title = element_text(family = "Maven Pro", color = "#599191", face = "bold", size = 16))
+theme(
+  plot.title = element_text(
+    family = "Maven Pro",
+    color = "#599191",
+    face = "bold",
+    size = 16
+  )
+)
 ### ============= PLOTS AND DATA ===================================================
 script_dir <- dirname(sys.frame(1)$ofile %||% ".")
 db_path <- file.path(script_dir, "..", "FPA_FOD_20170508.sqlite")
@@ -27,13 +49,13 @@ fires <- tbl(con, "Fires") |> collect()
 fires <- fires %>%
   mutate(
     DISCOVERY_DATE2 = as.Date(DISCOVERY_DATE, origin = "1970-01-01") - 2440587,
-    CONT_DATE2      = as.Date(CONT_DATE,      origin = "1970-01-01") - 2440587
+    CONT_DATE2 = as.Date(CONT_DATE, origin = "1970-01-01") - 2440587
   )
 
 fires <- fires %>%
   mutate(
     DISCOVERY_TIME_NUM = as.numeric(DISCOVERY_TIME),
-    CONT_TIME_NUM      = as.numeric(CONT_TIME)
+    CONT_TIME_NUM = as.numeric(CONT_TIME)
   )
 
 fires_duration <- fires %>%
@@ -46,7 +68,11 @@ fires_duration <- fires %>%
       paste(CONT_DATE2, sprintf("%04d", CONT_TIME_NUM)),
       format = "%Y-%m-%d %H%M"
     ),
-    duration_hours = as.numeric(difftime(CONT_DATETIME, DISCOVERY_DATETIME, units = "hours"))
+    duration_hours = as.numeric(difftime(
+      CONT_DATETIME,
+      DISCOVERY_DATETIME,
+      units = "hours"
+    ))
   ) %>%
   filter(!is.na(duration_hours), duration_hours >= 0)
 
@@ -120,10 +146,14 @@ year_plot <- ggplot(
 
 xValue <- 1:10
 yValue <- cumsum(rnorm(10))
-data <- data.frame(xValue,yValue)
+data <- data.frame(xValue, yValue)
 
-fire_size_cause_plot_2 = ggplot(data, aes(x=xValue, y=yValue)) + geom_line() + labs(title = "TEMP fire_size_cause_plot_2")
-time_size_cause_plot = ggplot(data, aes(x=xValue, y=yValue)) + geom_line() + labs(title = "TEMP time_size_cause_plot")
+fire_size_cause_plot_2 = ggplot(data, aes(x = xValue, y = yValue)) +
+  geom_line() +
+  labs(title = "TEMP fire_size_cause_plot_2")
+time_size_cause_plot = ggplot(data, aes(x = xValue, y = yValue)) +
+  geom_line() +
+  labs(title = "TEMP time_size_cause_plot")
 
 # ====================================================================================================================
 #### rozmiar pożaru - przyczyna
@@ -132,15 +162,18 @@ fires_filtered <- fires %>%
   filter(FIRE_SIZE <= max_fire)
 
 
-fire_size_cause_plot <- ggplot(fires_filtered, aes(x = FIRE_SIZE, y = STAT_CAUSE_DESCR, fill = STAT_CAUSE_DESCR)) +
-                                geom_density_ridges() +
-                                theme_ridges() + 
-                                theme(legend.position = "none") + 
-                                labs(
-                                    title = "Fire cause vs size",
-                                    x = "Fire size",
-                                    y = "Fire cause"
-                                )
+fire_size_cause_plot <- ggplot(
+  fires_filtered,
+  aes(x = FIRE_SIZE, y = STAT_CAUSE_DESCR, fill = STAT_CAUSE_DESCR)
+) +
+  geom_density_ridges() +
+  theme_ridges() +
+  theme(legend.position = "none") +
+  labs(
+    title = "Fire cause vs size",
+    x = "Fire size",
+    y = "Fire cause"
+  )
 
 
 #### właściciel terenu (TODO: plot the FOD_ID count for OWNER_DESCR )
@@ -151,18 +184,24 @@ owner_counts <- fires %>%
 
 # print(owner_counts)
 
-teren_owner_plot <- ggplot(owner_counts, aes(x = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID), 
-                         y = count_FOD_ID)) +
+teren_owner_plot <- ggplot(
+  owner_counts,
+  aes(x = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID), y = count_FOD_ID)
+) +
   geom_col(fill = "#599191", alpha = 0.8) +
-  
+
   geom_point(aes(y = count_FOD_ID), color = "#599191", size = 3) +
-  
-  geom_segment(aes(x = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID),
-                   xend = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID),
-                   y = 0,
-                   yend = count_FOD_ID),
-               color = "#599191") +
-  
+
+  geom_segment(
+    aes(
+      x = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID),
+      xend = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID),
+      y = 0,
+      yend = count_FOD_ID
+    ),
+    color = "#599191"
+  ) +
+
   coord_polar() +
   theme_minimal() +
   theme(axis.text.x = element_text(size = 8)) +
@@ -180,14 +219,19 @@ duration_year_summary <- fires_duration %>%
     .groups = "drop"
   )
 
-duration_year_plot <- ggplot(duration_year_summary,
+duration_year_plot <- ggplot(
+  duration_year_summary,
   aes(x = FIRE_YEAR, y = mean_duration)
 ) +
   geom_line(color = "#599191") +
-  geom_ribbon(aes(
-    ymin = 0,
-    ymax = mean_duration + sd_duration
-  ), alpha = 0.2, fill = "#599191") +
+  geom_ribbon(
+    aes(
+      ymin = 0,
+      ymax = mean_duration + sd_duration
+    ),
+    alpha = 0.2,
+    fill = "#599191"
+  ) +
   theme_minimal() +
   expand_limits(y = 0) +
   labs(
@@ -201,10 +245,12 @@ duration_year_plot <- ggplot(duration_year_summary,
 max_fire_h <- quantile(fires_duration$duration_hours, 0.85, na.rm = TRUE)
 fires_filtered_h <- fires_duration %>% filter(duration_hours <= max_fire_h)
 
-duration_distribution_plot <- ggplot(fires_filtered_h,
+duration_distribution_plot <- ggplot(
+  fires_filtered_h,
   aes(x = duration_hours)
 ) +
-  geom_histogram(aes(y = after_stat(density)),
+  geom_histogram(
+    aes(y = after_stat(density)),
     bins = 50,
     fill = "#599191",
     alpha = 0.7
@@ -218,10 +264,9 @@ duration_distribution_plot <- ggplot(fires_filtered_h,
   )
 
 #### rozkład wielkości pożarów
-size_distribution_plot <- ggplot(fires_filtered,
-  aes(x = FIRE_SIZE)
-) +
-  geom_histogram(aes(y = after_stat(density)),
+size_distribution_plot <- ggplot(fires_filtered, aes(x = FIRE_SIZE)) +
+  geom_histogram(
+    aes(y = after_stat(density)),
     bins = 50,
     fill = "#599191",
     alpha = 0.7
@@ -233,7 +278,6 @@ size_distribution_plot <- ggplot(fires_filtered,
     x = "Size",
     y = "Density"
   )
-
 
 
 #### przyczyna - czas trwania
@@ -271,18 +315,21 @@ dbDisconnect(con)
 
 ### ============= DASHBOARD =====================================================================================
 ui <- dashboardPage(
-  
   dashboardHeader(title = "Wildfire Dashboard"),
 
   dashboardSidebar(
     sidebarMenu(
       id = "tabs",
       menuItem("Home", tabName = "main_page", icon = icon("home")),
-      menuItem("Project 1", tabName = "project1", icon = icon("chart-line"), 
+      menuItem(
+        "Project 1",
+        tabName = "project1",
+        icon = icon("chart-line"),
         menuSubItem("Fire duration analisys", tabName = "subitemP1"),
         menuSubItem("Fire size analisys", tabName = "subitemP2"),
         menuSubItem("Number of occurrences", tabName = "subitemP3"),
-        menuSubItem("Custom plot", tabName = "subitemP4")),
+        menuSubItem("Custom plot", tabName = "subitemP4")
+      ),
       menuItem("Project 2", tabName = "project2", icon = icon("chart-bar")),
       menuItem("Project 3", tabName = "project3", icon = icon("fire"))
     )
@@ -296,8 +343,14 @@ ui <- dashboardPage(
       condition = "input.tabs == 'main_page'",
       fluidRow(
         box(
-          width = 12, status = "primary", solidHeader = FALSE,
-          h1("Wizualizacje Danych Projects", align = "center", class = "main-title"),
+          width = 12,
+          status = "primary",
+          solidHeader = FALSE,
+          h1(
+            "Wizualizacje Danych Projects",
+            align = "center",
+            class = "main-title"
+          ),
           br(),
           h3("By:", align = "center"),
           h4("Aleksandra Krasicka 512751", align = "center"),
@@ -307,13 +360,14 @@ ui <- dashboardPage(
       )
     ),
     tabItems(
-
       # ==================== PROJECT 1
-      tabItem(tabName = "subitemP1",
+      tabItem(
+        tabName = "subitemP1",
         fluidRow(
           tabBox(
             width = 12,
-            tabPanel("General Analysis",
+            tabPanel(
+              "General Analysis",
               fluidRow(
                 box(plotOutput("duration_year_plot"), width = 6),
                 box(plotOutput("duration_distribution_plot"), width = 6)
@@ -321,22 +375,23 @@ ui <- dashboardPage(
               fluidRow(
                 box(
                   title = "Select fire causes",
-                  width = 4, 
+                  width = 4,
                   checkboxGroupInput(
                     inputId = "selected_causes",
-                    label = NULL, 
+                    label = NULL,
                     choices = unique(fires$STAT_CAUSE_DESCR),
-                    selected = NULL 
+                    selected = NULL
                   )
                 ),
                 box(
                   title = "Fire Duration by Cause",
-                  width = 8, 
+                  width = 8,
                   plotOutput("cause_duration_plot")
                 )
               )
             ),
-            tabPanel("Size vs Duration Relation",
+            tabPanel(
+              "Size vs Duration Relation",
               fluidRow(
                 box(
                   title = "Filters",
@@ -352,13 +407,16 @@ ui <- dashboardPage(
                     label = "Select Timeline (Years):",
                     min = min(fires$FIRE_YEAR, na.rm = TRUE),
                     max = max(fires$FIRE_YEAR, na.rm = TRUE),
-                    value = c(min(fires$FIRE_YEAR, na.rm = TRUE), max(fires$FIRE_YEAR, na.rm = TRUE)),
+                    value = c(
+                      min(fires$FIRE_YEAR, na.rm = TRUE),
+                      max(fires$FIRE_YEAR, na.rm = TRUE)
+                    ),
                     step = 1,
                     sep = ""
                   )
                 ),
                 box(
-                  plotOutput("size_duration_bubble_plot", height = "600px"), 
+                  plotOutput("size_duration_bubble_plot", height = "600px"),
                   width = 9
                 )
               )
@@ -366,72 +424,67 @@ ui <- dashboardPage(
           )
         )
       ),
-      tabItem(tabName = "subitemP2",
+      tabItem(
+        tabName = "subitemP2",
         fluidRow(
           tabBox(
             width = 12,
 
             tabPanel("Size vs Cause", plotOutput("fire_size_cause_plot")),
             tabPanel("Size Distribution", plotOutput("size_distribution_plot")),
-            tabPanel("Terrain owner Distribution", plotOutput("teren_owner_plot"))
+            tabPanel(
+              "Terrain owner Distribution",
+              plotOutput("teren_owner_plot")
+            )
           )
         )
       ),
-      tabItem(tabName = "subitemP3",
-        
-          tabBox(
-            width = 12,
+      tabItem(
+        tabName = "subitemP3",
 
-            tabPanel("By Day",
-              plotOutput("doy_plot")
-            ),
+        tabBox(
+          width = 12,
 
-            tabPanel("By Month",
-              plotOutput("month_plot")
-            ),
+          tabPanel("By Day", plotOutput("doy_plot")),
 
-            tabPanel("By Year",
-              plotOutput("year_plot")
-            )
-          )
-        
+          tabPanel("By Month", plotOutput("month_plot")),
+
+          tabPanel("By Year", plotOutput("year_plot"))
+        )
       ),
-      tabItem(tabName = "subitemP4",
+      tabItem(
+        tabName = "subitemP4",
         box(plotOutput("time_size_cause_plot"), width = 6)
       ),
 
       # ==================== Project 2
-      tabItem(tabName = "project2",
+      tabItem(
+        tabName = "project2",
         fluidRow(
           tabBox(
             width = 12,
 
-            tabPanel("project2",
-              h3("Project 2 content goes here")
-            )
+            tabPanel("project2", h3("Project 2 content goes here"))
           )
         )
       ),
 
       # ==================== Project 3
-      tabItem(tabName = "project3",
+      tabItem(
+        tabName = "project3",
         fluidRow(
           tabBox(
             width = 12,
 
-            tabPanel("project3",
-              h3("Project 3 content goes here")
-            )
+            tabPanel("project3", h3("Project 3 content goes here"))
           )
         )
       )
-
     )
   )
 )
 
 server <- function(input, output, session) {
-
   output$doy_plot <- renderPlot({
     doy_plot
   })
@@ -461,7 +514,7 @@ server <- function(input, output, session) {
   })
 
   output$cause_duration_plot <- renderPlot({
-    req(input$selected_causes)  
+    req(input$selected_causes)
 
     filtered_data <- fires_duration_small %>%
       filter(STAT_CAUSE_DESCR %in% input$selected_causes)
@@ -497,7 +550,7 @@ server <- function(input, output, session) {
   })
   output$size_duration_bubble_plot <- renderPlot({
     req(input$bubble_causes, input$bubble_years)
-    
+
     filtered_bubble_data <- fires_bubble %>%
       filter(
         STAT_CAUSE_DESCR %in% input$bubble_causes,
@@ -507,7 +560,12 @@ server <- function(input, output, session) {
 
     ggplot(
       filtered_bubble_data,
-      aes(x = duration_hours, y = FIRE_SIZE, color = STAT_CAUSE_DESCR, size = FIRE_SIZE)
+      aes(
+        x = duration_hours,
+        y = FIRE_SIZE,
+        color = STAT_CAUSE_DESCR,
+        size = FIRE_SIZE
+      )
     ) +
       geom_point(alpha = 0.5, stroke = 0) +
       scale_x_log10(labels = scales::comma) +
@@ -515,7 +573,11 @@ server <- function(input, output, session) {
       scale_size_continuous(range = c(2, 12), guide = "none") +
       theme_minimal() +
       labs(
-        title = sprintf("Fire Size vs Duration by Cause (%d - %d)", input$bubble_years[1], input$bubble_years[2]),
+        title = sprintf(
+          "Fire Size vs Duration by Cause (%d - %d)",
+          input$bubble_years[1],
+          input$bubble_years[2]
+        ),
         x = "Duration (hours, log scale)",
         y = "Fire Size (log scale)",
         color = "Fire Cause"
@@ -525,4 +587,3 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
-
