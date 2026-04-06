@@ -327,8 +327,7 @@ ui <- dashboardPage(
         icon = icon("chart-line"),
         menuSubItem("Fire duration analisys", tabName = "subitemP1"),
         menuSubItem("Fire size analisys", tabName = "subitemP2"),
-        menuSubItem("Number of occurrences", tabName = "subitemP3"),
-        menuSubItem("Custom plot", tabName = "subitemP4")
+        menuSubItem("Number of occurrences", tabName = "subitemP3")
       ),
       menuItem("Project 2", tabName = "project2", icon = icon("chart-bar")),
       menuItem("Project 3", tabName = "project3", icon = icon("fire"))
@@ -451,10 +450,6 @@ ui <- dashboardPage(
 
           tabPanel("By Year", plotOutput("year_plot"))
         )
-      ),
-      tabItem(
-        tabName = "subitemP4",
-        box(plotOutput("time_size_cause_plot"), width = 6)
       ),
 
       # ==================== Project 2
