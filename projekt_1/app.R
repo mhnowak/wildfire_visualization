@@ -261,6 +261,11 @@ cause_duration_plot <- ggplot(
     y = "Duration (hours)"
   )
 
+
+#### Size vs Duration relation
+fires_bubble <- fires_duration %>%
+  filter(FIRE_SIZE > 0, duration_hours > 0)
+
 ### END
 dbDisconnect(con)
 
@@ -306,25 +311,58 @@ ui <- dashboardPage(
       # ==================== PROJECT 1
       tabItem(tabName = "subitemP1",
         fluidRow(
-          box(plotOutput("duration_year_plot"), width = 6),
-          box(plotOutput("duration_distribution_plot"), width = 6)
-        ),
-
-        fluidRow(
-          box(
-            title = "Select fire causes",
-            width = 4, 
-            checkboxGroupInput(
-              inputId = "selected_causes",
-              label = NULL, 
-              choices = unique(fires$STAT_CAUSE_DESCR),
-              selected = NULL 
+          tabBox(
+            width = 12,
+            tabPanel("General Analysis",
+              fluidRow(
+                box(plotOutput("duration_year_plot"), width = 6),
+                box(plotOutput("duration_distribution_plot"), width = 6)
+              ),
+              fluidRow(
+                box(
+                  title = "Select fire causes",
+                  width = 4, 
+                  checkboxGroupInput(
+                    inputId = "selected_causes",
+                    label = NULL, 
+                    choices = unique(fires$STAT_CAUSE_DESCR),
+                    selected = NULL 
+                  )
+                ),
+                box(
+                  title = "Fire Duration by Cause",
+                  width = 8, 
+                  plotOutput("cause_duration_plot")
+                )
+              )
+            ),
+            tabPanel("Size vs Duration Relation",
+              fluidRow(
+                box(
+                  title = "Filters",
+                  width = 3,
+                  checkboxGroupInput(
+                    inputId = "bubble_causes",
+                    label = "Select Causes:",
+                    choices = unique(fires$STAT_CAUSE_DESCR),
+                    selected = unique(fires$STAT_CAUSE_DESCR)
+                  ),
+                  sliderInput(
+                    inputId = "bubble_years",
+                    label = "Select Timeline (Years):",
+                    min = min(fires$FIRE_YEAR, na.rm = TRUE),
+                    max = max(fires$FIRE_YEAR, na.rm = TRUE),
+                    value = c(min(fires$FIRE_YEAR, na.rm = TRUE), max(fires$FIRE_YEAR, na.rm = TRUE)),
+                    step = 1,
+                    sep = ""
+                  )
+                ),
+                box(
+                  plotOutput("size_duration_bubble_plot", height = "600px"), 
+                  width = 9
+                )
+              )
             )
-          ),
-          box(
-            title = "Fire Duration by Cause",
-            width = 8, 
-            plotOutput("cause_duration_plot")
           )
         )
       ),
@@ -456,6 +494,33 @@ server <- function(input, output, session) {
 
   output$time_size_cause_plot <- renderPlot({
     time_size_cause_plot
+  })
+  output$size_duration_bubble_plot <- renderPlot({
+    req(input$bubble_causes, input$bubble_years)
+    
+    filtered_bubble_data <- fires_bubble %>%
+      filter(
+        STAT_CAUSE_DESCR %in% input$bubble_causes,
+        FIRE_YEAR >= input$bubble_years[1],
+        FIRE_YEAR <= input$bubble_years[2]
+      )
+
+    ggplot(
+      filtered_bubble_data,
+      aes(x = duration_hours, y = FIRE_SIZE, color = STAT_CAUSE_DESCR, size = FIRE_SIZE)
+    ) +
+      geom_point(alpha = 0.5, stroke = 0) +
+      scale_x_log10(labels = scales::comma) +
+      scale_y_log10(labels = scales::comma) +
+      scale_size_continuous(range = c(2, 12), guide = "none") +
+      theme_minimal() +
+      labs(
+        title = sprintf("Fire Size vs Duration by Cause (%d - %d)", input$bubble_years[1], input$bubble_years[2]),
+        x = "Duration (hours, log scale)",
+        y = "Fire Size (log scale)",
+        color = "Fire Cause"
+      ) +
+      theme(legend.position = "right")
   })
 }
 
