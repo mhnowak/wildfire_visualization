@@ -67,3 +67,4 @@ jupyter kernelspec list
 ## Useful tools
 
 1. [DB Browser for SQLite](https://sqlitebrowser.org/) - browse the data from SQLite quickly
+2. [Air - R language formatter](https://open-vsx.org/vscode/item?itemName=posit.air-vscode) - VS Code extension
