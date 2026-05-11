@@ -18,7 +18,8 @@ pacman::p_load(
   ggridges,
   stringr,
   ggdist,
-  shinycssloaders
+  shinycssloaders,
+  maps
 )
 theme(
   plot.title = element_text(
@@ -308,6 +309,21 @@ cause_duration_plot <- ggplot(
 fires_bubble <- fires_duration %>%
   filter(FIRE_SIZE > 0, duration_hours > 0)
 
+### Map data ---------------------------------------------------------------
+# Lightweight query: only columns needed for maps
+fires_geo <- dbGetQuery(
+  con,
+  "SELECT FIRE_YEAR, STATE, STAT_CAUSE_DESCR, LATITUDE, LONGITUDE
+   FROM Fires
+   WHERE LATITUDE IS NOT NULL AND LONGITUDE IS NOT NULL"
+)
+
+# State name lookup (maps package uses lower-case full names)
+state_abb_to_name <- tibble(
+  STATE = state.abb,
+  region = tolower(state.name)
+)
+
 ### END
 dbDisconnect(con)
 
@@ -440,11 +456,82 @@ ui <- dashboardPage(
         fluidRow(
           tabBox(
             width = 12,
-            tabPanel("Size vs Cause", plotOutput("fire_size_cause_plot")),
+            tabPanel(
+              "Size vs Cause",
+              fluidRow(
+                box(
+                  title = "Filters",
+                  width = 3,
+                  radioButtons(
+                    inputId = "size_cause_scale",
+                    label = "X-axis Scale:",
+                    choices = c("Normal" = "linear", "Log" = "log"),
+                    selected = "linear",
+                    inline = TRUE
+                  ),
+                  sliderInput(
+                    inputId = "size_cause_years",
+                    label = "Select Timeline (Years):",
+                    min = min(fires$FIRE_YEAR, na.rm = TRUE),
+                    max = max(fires$FIRE_YEAR, na.rm = TRUE),
+                    value = c(min(fires$FIRE_YEAR, na.rm = TRUE), max(fires$FIRE_YEAR, na.rm = TRUE)),
+                    step = 1,
+                    sep = ""
+                  ),
+                  tags$label("Select Causes:"),
+                  actionButton(
+                    "size_cause_toggle_causes", "Deselect All",
+                    class = "btn-sm btn-warning",
+                    style = "margin-bottom: 6px; width: 100%;"
+                  ),
+                  checkboxGroupInput(
+                    inputId = "size_cause_causes",
+                    label = NULL,
+                    choices = unique(fires$STAT_CAUSE_DESCR),
+                    selected = unique(fires$STAT_CAUSE_DESCR)
+                  ),
+                  actionButton(
+                    "size_cause_apply", "Apply Filters",
+                    class = "btn-primary",
+                    style = "margin-top: 10px; width: 100%;"
+                  )
+                ),
+                box(
+                  width = 9,
+                  withSpinner(plotOutput("fire_size_cause_plot"), type = 8, color = "#599191")
+                )
+              )
+            ),
             tabPanel("Size Distribution", plotOutput("size_distribution_plot")),
             tabPanel(
               "Terrain owner Distribution",
-              plotOutput("teren_owner_plot")
+              fluidRow(
+                box(
+                  title = "Filters",
+                  width = 3,
+                  tags$label("Select Owner Types:"),
+                  actionButton(
+                    "owner_toggle", "Deselect All",
+                    class = "btn-sm btn-warning",
+                    style = "margin-bottom: 6px; width: 100%;"
+                  ),
+                  checkboxGroupInput(
+                    inputId = "owner_types",
+                    label = NULL,
+                    choices = unique(fires$OWNER_DESCR),
+                    selected = unique(fires$OWNER_DESCR)
+                  ),
+                  actionButton(
+                    "owner_apply", "Apply Filters",
+                    class = "btn-primary",
+                    style = "margin-top: 10px; width: 100%;"
+                  )
+                ),
+                box(
+                  width = 9,
+                  withSpinner(plotOutput("teren_owner_plot"), type = 8, color = "#599191")
+                )
+              )
             )
           )
         )
@@ -453,8 +540,60 @@ ui <- dashboardPage(
         tabName = "subitemP3",
         tabBox(
           width = 12,
-          tabPanel("By Day", plotOutput("doy_plot")),
-          tabPanel("By Month", plotOutput("month_plot")),
+          tabPanel(
+              "By Day",
+              fluidRow(
+                box(
+                  title = "Filters",
+                  width = 3,
+                  sliderInput(
+                    inputId = "doy_years",
+                    label = "Select Timeline (Years):",
+                    min = min(fires$FIRE_YEAR, na.rm = TRUE),
+                    max = max(fires$FIRE_YEAR, na.rm = TRUE),
+                    value = c(min(fires$FIRE_YEAR, na.rm = TRUE), max(fires$FIRE_YEAR, na.rm = TRUE)),
+                    step = 1,
+                    sep = ""
+                  ),
+                  actionButton(
+                    "doy_apply", "Apply Filters",
+                    class = "btn-primary",
+                    style = "margin-top: 10px; width: 100%;"
+                  )
+                ),
+                box(
+                  width = 9,
+                  withSpinner(plotOutput("doy_plot"), type = 8, color = "#599191")
+                )
+              )
+            ),
+            tabPanel(
+              "By Month",
+              fluidRow(
+                box(
+                  title = "Filters",
+                  width = 3,
+                  sliderInput(
+                    inputId = "month_years",
+                    label = "Select Timeline (Years):",
+                    min = min(fires$FIRE_YEAR, na.rm = TRUE),
+                    max = max(fires$FIRE_YEAR, na.rm = TRUE),
+                    value = c(min(fires$FIRE_YEAR, na.rm = TRUE), max(fires$FIRE_YEAR, na.rm = TRUE)),
+                    step = 1,
+                    sep = ""
+                  ),
+                  actionButton(
+                    "month_apply", "Apply Filters",
+                    class = "btn-primary",
+                    style = "margin-top: 10px; width: 100%;"
+                  )
+                ),
+                box(
+                  width = 9,
+                  withSpinner(plotOutput("month_plot"), type = 8, color = "#599191")
+                )
+              )
+            ),
           tabPanel("By Year", plotOutput("year_plot"))
         )
       ),
@@ -463,9 +602,42 @@ ui <- dashboardPage(
       tabItem(
         tabName = "project2",
         fluidRow(
-          tabBox(
-            width = 12,
-            tabPanel("project2", h3("Project 2 content goes here"))
+          box(
+            title = "Filters",
+            width = 3,
+            status = "primary",
+            sliderInput(
+              inputId = "state_map_years",
+              label = "Select Timeline (Years):",
+              min = min(fires$FIRE_YEAR, na.rm = TRUE),
+              max = max(fires$FIRE_YEAR, na.rm = TRUE),
+              value = c(min(fires$FIRE_YEAR, na.rm = TRUE), max(fires$FIRE_YEAR, na.rm = TRUE)),
+              step = 1,
+              sep = ""
+            ),
+            tags$label("Select Causes:"),
+            actionButton(
+              "state_map_toggle_causes", "Deselect All",
+              class = "btn-sm btn-warning",
+              style = "margin-bottom: 6px; width: 100%;"
+            ),
+            checkboxGroupInput(
+              inputId = "state_map_causes",
+              label = NULL,
+              choices = unique(fires$STAT_CAUSE_DESCR),
+              selected = unique(fires$STAT_CAUSE_DESCR)
+            ),
+            actionButton(
+              "state_map_apply", "Apply Filters",
+              class = "btn-primary",
+              style = "margin-top: 10px; width: 100%;"
+            )
+          ),
+          box(
+            title = "Wildfire Occurrences by State",
+            width = 9,
+            status = "primary",
+            withSpinner(plotlyOutput("state_map", height = "600px"), type = 8, color = "#599191")
           )
         )
       ),
@@ -474,9 +646,42 @@ ui <- dashboardPage(
       tabItem(
         tabName = "project3",
         fluidRow(
-          tabBox(
-            width = 12,
-            tabPanel("project3", h3("Project 3 content goes here"))
+          box(
+            title = "Filters",
+            width = 3,
+            status = "primary",
+            sliderInput(
+              inputId = "heatmap_years",
+              label = "Select Timeline (Years):",
+              min = min(fires$FIRE_YEAR, na.rm = TRUE),
+              max = max(fires$FIRE_YEAR, na.rm = TRUE),
+              value = c(min(fires$FIRE_YEAR, na.rm = TRUE), max(fires$FIRE_YEAR, na.rm = TRUE)),
+              step = 1,
+              sep = ""
+            ),
+            tags$label("Select Causes:"),
+            actionButton(
+              "heatmap_toggle_causes", "Deselect All",
+              class = "btn-sm btn-warning",
+              style = "margin-bottom: 6px; width: 100%;"
+            ),
+            checkboxGroupInput(
+              inputId = "heatmap_causes",
+              label = NULL,
+              choices = unique(fires$STAT_CAUSE_DESCR),
+              selected = unique(fires$STAT_CAUSE_DESCR)
+            ),
+            actionButton(
+              "heatmap_apply", "Apply Filters",
+              class = "btn-primary",
+              style = "margin-top: 10px; width: 100%;"
+            )
+          ),
+          box(
+            title = "Wildfire Heatmap — Continental US",
+            width = 9,
+            status = "primary",
+            withSpinner(plotlyOutput("us_heatmap", height = "600px"), type = 8, color = "#599191")
           )
         )
       )
@@ -485,24 +690,132 @@ ui <- dashboardPage(
 )
 
 server <- function(input, output, session) {
+  doy_data <- eventReactive(input$doy_apply, {
+    req(input$doy_years)
+    fires %>% filter(FIRE_YEAR >= input$doy_years[1], FIRE_YEAR <= input$doy_years[2])
+  }, ignoreNULL = FALSE)
+
   output$doy_plot <- renderPlot({
-    doy_plot
+    df <- doy_data()
+    ggplot(df, aes(x = DISCOVERY_DOY)) +
+      geom_histogram(binwidth = 1, fill = "#599191") +
+      scale_x_continuous(breaks = dynamic_breaks, labels = dynamic_labels) +
+      theme_minimal() +
+      labs(title = "Fires by Day of Year", x = "Day of Year", y = "Number of Fires")
   })
 
+  month_data <- eventReactive(input$month_apply, {
+    req(input$month_years)
+    fires %>%
+      filter(FIRE_YEAR >= input$month_years[1], FIRE_YEAR <= input$month_years[2]) %>%
+      mutate(
+        temp_date = as.Date(paste(FIRE_YEAR, DISCOVERY_DOY), format = "%Y %j"),
+        Month_Num = month(temp_date)
+      ) %>%
+      group_by(Month_Num) %>%
+      summarise(Count = n())
+  }, ignoreNULL = FALSE)
+
   output$month_plot <- renderPlot({
-    month_plot
+    ms <- month_data()
+    ggplot(ms, aes(x = factor(Month_Num), y = Count)) +
+      geom_col(fill = "#599191") +
+      scale_x_discrete(labels = month.abb) +
+      theme_minimal() +
+      labs(title = "Fires by Month", x = "Month", y = "Number of Fires")
   })
 
   output$year_plot <- renderPlot({
     year_plot
   })
 
-  output$fire_size_cause_plot <- renderPlot({
-    fire_size_cause_plot
+  size_cause_filtered <- eventReactive(input$size_cause_apply, {
+    req(input$size_cause_years, input$size_cause_causes)
+    list(
+      data = fires %>%
+        filter(
+          FIRE_YEAR >= input$size_cause_years[1],
+          FIRE_YEAR <= input$size_cause_years[2],
+          STAT_CAUSE_DESCR %in% input$size_cause_causes,
+          FIRE_SIZE <= quantile(fires$FIRE_SIZE, 0.85, na.rm = TRUE)
+        ),
+      scale = input$size_cause_scale
+    )
+  }, ignoreNULL = FALSE)
+
+  observeEvent(input$size_cause_toggle_causes, {
+    all_causes <- unique(fires$STAT_CAUSE_DESCR)
+    if (length(input$size_cause_causes) == length(all_causes)) {
+      updateCheckboxGroupInput(session, "size_cause_causes", selected = character(0))
+      updateActionButton(session, "size_cause_toggle_causes", label = "Select All")
+    } else {
+      updateCheckboxGroupInput(session, "size_cause_causes", selected = all_causes)
+      updateActionButton(session, "size_cause_toggle_causes", label = "Deselect All")
+    }
   })
 
+  output$fire_size_cause_plot <- renderPlot({
+    res <- size_cause_filtered()
+    df <- res$data
+
+    p <- ggplot(df, aes(x = FIRE_SIZE, y = STAT_CAUSE_DESCR, fill = STAT_CAUSE_DESCR)) +
+      geom_density_ridges() +
+      theme_ridges() +
+      theme(legend.position = "none") +
+      labs(
+        title = "Fire cause vs size",
+        x = "Fire size",
+        y = "Fire cause"
+      )
+
+    if (res$scale == "log") {
+      p <- p + scale_x_log10()
+    }
+
+    p
+  })
+
+  observeEvent(input$owner_toggle, {
+    all_owners <- unique(fires$OWNER_DESCR)
+    if (length(input$owner_types) == length(all_owners)) {
+      updateCheckboxGroupInput(session, "owner_types", selected = character(0))
+      updateActionButton(session, "owner_toggle", label = "Select All")
+    } else {
+      updateCheckboxGroupInput(session, "owner_types", selected = all_owners)
+      updateActionButton(session, "owner_toggle", label = "Deselect All")
+    }
+  })
+
+  owner_filtered <- eventReactive(input$owner_apply, {
+    req(input$owner_types)
+    fires %>%
+      filter(OWNER_DESCR %in% input$owner_types) %>%
+      group_by(OWNER_DESCR) %>%
+      summarise(count_FOD_ID = n(), .groups = "drop") %>%
+      arrange(desc(count_FOD_ID))
+  }, ignoreNULL = FALSE)
+
   output$teren_owner_plot <- renderPlot({
-    teren_owner_plot
+    owner_counts <- owner_filtered()
+    ggplot(
+      owner_counts,
+      aes(x = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID), y = count_FOD_ID)
+    ) +
+      geom_col(fill = "#599191", alpha = 0.8) +
+      geom_point(aes(y = count_FOD_ID), color = "#599191", size = 3) +
+      geom_segment(
+        aes(
+          x = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID),
+          xend = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID),
+          y = 0,
+          yend = count_FOD_ID
+        ),
+        color = "#599191"
+      ) +
+      coord_polar() +
+      theme_minimal() +
+      theme(axis.text.x = element_text(size = 8)) +
+      labs(x = "", y = "FOD_ID Count", title = "Count of fires by land owner")
   })
 
   output$duration_year_plot <- renderPlot({
@@ -654,6 +967,130 @@ server <- function(input, output, session) {
         color = "Fire Cause"
       ) +
       theme(legend.position = "right")
+  })
+  # ==================== Project 2 — State choropleth map
+  observeEvent(input$state_map_toggle_causes, {
+    all_causes <- unique(fires$STAT_CAUSE_DESCR)
+    if (length(input$state_map_causes) == length(all_causes)) {
+      updateCheckboxGroupInput(session, "state_map_causes", selected = character(0))
+      updateActionButton(session, "state_map_toggle_causes", label = "Select All")
+    } else {
+      updateCheckboxGroupInput(session, "state_map_causes", selected = all_causes)
+      updateActionButton(session, "state_map_toggle_causes", label = "Deselect All")
+    }
+  })
+
+  state_map_data <- eventReactive(input$state_map_apply, {
+    req(input$state_map_years, input$state_map_causes)
+    fires_geo %>%
+      filter(
+        FIRE_YEAR >= input$state_map_years[1],
+        FIRE_YEAR <= input$state_map_years[2],
+        STAT_CAUSE_DESCR %in% input$state_map_causes
+      ) %>%
+      group_by(STATE) %>%
+      summarise(count = n(), .groups = "drop") %>%
+      left_join(state_abb_to_name, by = "STATE")
+  }, ignoreNULL = FALSE)
+
+  output$state_map <- renderPlotly({
+    state_counts <- state_map_data()
+
+    # Get US state polygon data from maps package
+    us_map <- map_data("state")
+
+    # Merge fire counts (region = lower-case state name)
+    map_joined <- us_map %>%
+      left_join(state_counts, by = "region")
+    map_joined$count[is.na(map_joined$count)] <- 0
+
+    p <- ggplot(map_joined, aes(
+      x = long, y = lat, group = group,
+      fill = count,
+      text = paste0(tools::toTitleCase(region), ": ", scales::comma(count), " fires")
+    )) +
+      geom_polygon(color = "white", linewidth = 0.3) +
+      scale_fill_gradient(
+        low = "#ffffcc", high = "#800026",
+        name = "# Fires",
+        labels = scales::comma
+      ) +
+      coord_fixed(1.3) +
+      theme_void() +
+      labs(title = "Wildfire Occurrences by State")
+
+    ggplotly(p, tooltip = "text") %>%
+      layout(
+        geo = list(scope = "usa"),
+        margin = list(l = 0, r = 0, t = 40, b = 0)
+      )
+  })
+
+  # ==================== Project 3 — Heatmap
+  observeEvent(input$heatmap_toggle_causes, {
+    all_causes <- unique(fires$STAT_CAUSE_DESCR)
+    if (length(input$heatmap_causes) == length(all_causes)) {
+      updateCheckboxGroupInput(session, "heatmap_causes", selected = character(0))
+      updateActionButton(session, "heatmap_toggle_causes", label = "Select All")
+    } else {
+      updateCheckboxGroupInput(session, "heatmap_causes", selected = all_causes)
+      updateActionButton(session, "heatmap_toggle_causes", label = "Deselect All")
+    }
+  })
+
+  heatmap_data <- eventReactive(input$heatmap_apply, {
+    req(input$heatmap_years, input$heatmap_causes)
+    df <- fires_geo %>%
+      filter(
+        FIRE_YEAR >= input$heatmap_years[1],
+        FIRE_YEAR <= input$heatmap_years[2],
+        STAT_CAUSE_DESCR %in% input$heatmap_causes,
+        LATITUDE >= 24, LATITUDE <= 50,
+        LONGITUDE >= -125, LONGITUDE <= -66
+      )
+    # Sample to max 200k points for performance
+    if (nrow(df) > 200000) {
+      df <- df[sample(nrow(df), 200000), ]
+    }
+    df
+  }, ignoreNULL = FALSE)
+
+  output$us_heatmap <- renderPlotly({
+    df <- heatmap_data()
+
+    # US state outlines for background
+    us_map <- map_data("state")
+
+    p <- ggplot() +
+      geom_polygon(
+        data = us_map,
+        aes(x = long, y = lat, group = group),
+        fill = "#1a1a2e", color = "#444466", linewidth = 0.2
+      ) +
+      stat_density_2d(
+        data = df,
+        aes(x = LONGITUDE, y = LATITUDE, fill = after_stat(density)),
+        geom = "raster",
+        contour = FALSE,
+        alpha = 0.85,
+        n = 200
+      ) +
+      scale_fill_gradientn(
+        colours = c("#ffffb2", "#fecc5c", "#fd8d3c", "#f03b20", "#bd0026"),
+        name = "Density"
+      ) +
+      coord_fixed(xlim = c(-125, -66), ylim = c(24, 50), ratio = 1.3) +
+      theme_void() +
+      theme(
+        plot.background = element_rect(fill = "#1a1a2e", color = NA),
+        legend.text = element_text(color = "white"),
+        legend.title = element_text(color = "white"),
+        plot.title = element_text(color = "white", hjust = 0.5)
+      ) +
+      labs(title = "Wildfire Density Heatmap — Continental US")
+
+    ggplotly(p) %>%
+      layout(margin = list(l = 0, r = 0, t = 40, b = 0))
   })
 }
 
