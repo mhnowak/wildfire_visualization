@@ -35,17 +35,9 @@ con <- dbConnect(RSQLite::SQLite(), db_path)
 
 fires <- tbl(con, "Fires") |> collect()
 
-# print(head(fires$DISCOVERY_DATE))
-# print(head(fires$DISCOVERY_TIME))
-# print(head(fires$CONT_DATE))
-# print(head(fires$CONT_TIME))
+total_fires <- nrow(fires)
 
-# cause_counts <- fires %>%
-#   count(OWNER_DESCR , name = "count_FOD_ID")
-
-# print(cause_counts)
-
-### Fire duration
+### ============= DATA PREPARATION =====================================================================================
 fires <- fires %>%
   mutate(
     DISCOVERY_DATE2 = as.Date(DISCOVERY_DATE, origin = "1970-01-01") - 2440587,
@@ -76,140 +68,64 @@ fires_duration <- fires %>%
   ) %>%
   filter(!is.na(duration_hours), duration_hours >= 0)
 
-# print(head(fires_duration$DISCOVERY_DATETIME))
-
-#### fires_count_by_date.R
-
-doy_summary <- fires |>
-  group_by(DISCOVERY_DOY) |>
-  summarise(Count = n()) |>
-  arrange(DISCOVERY_DOY)
-
-sample_dates <- as.Date(paste0("2023-", 1:12, "-01"))
-dynamic_breaks <- as.numeric(format(sample_dates, "%j"))
-dynamic_labels <- month.abb
-
-doy_plot <- ggplot(
-  fires,
-  aes(x = DISCOVERY_DOY)
-) +
-  geom_histogram(binwidth = 1, fill = "#599191") +
-  scale_x_continuous(
-    breaks = dynamic_breaks,
-    labels = dynamic_labels
-  ) +
-  theme_minimal() +
-  labs(
-    title = "Fires by Day of Year",
-    x = "Day of Year",
-    y = "Number of Fires"
+doy_summary <- fires %>%
+  group_by(DISCOVERY_DOY) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(
+    percent = 100 * Count / sum(Count),
+    tooltip = paste0(
+      "Day: ", DISCOVERY_DOY,
+      "<br>Count: ", Count,
+      "<br>%: ", round(percent,2)
+    )
   )
 
-month_summary <- fires |>
+month_summary <- fires %>%
   mutate(
     temp_date = as.Date(paste(FIRE_YEAR, DISCOVERY_DOY), format = "%Y %j"),
     Month_Num = month(temp_date)
-  ) |>
-  group_by(Month_Num) |>
-  summarise(Count = n())
-
-month_plot <- ggplot(
-  month_summary,
-  aes(x = factor(Month_Num), y = Count)
-) +
-  geom_col(fill = "#599191") +
-  scale_x_discrete(labels = month.abb) +
-  theme_minimal() +
-  labs(
-    title = "Fires by Month",
-    x = "Month",
-    y = "Number of Fires"
+  ) %>%
+  group_by(Month_Num) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(
+    percent = 100 * Count / sum(Count),
+    tooltip = paste0(
+      "Month: ", month.abb[Month_Num],
+      "<br>Count: ", Count,
+      "<br>%: ", round(percent,2)
+    )
   )
 
-year_summary <- fires |>
-  group_by(FIRE_YEAR) |>
-  summarise(Count = n())
-
-year_plot <- ggplot(
-  year_summary,
-  aes(x = factor(FIRE_YEAR), y = Count)
-) +
-  geom_col(fill = "#599191") +
-  theme_minimal() +
-  labs(
-    title = "Fires by Year",
-    x = "Year",
-    y = "Number of Fires"
+year_summary <- fires %>%
+  group_by(FIRE_YEAR) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(
+    percent = 100 * Count / sum(Count),
+    tooltip = paste0(
+      "Year: ", FIRE_YEAR,
+      "<br>Count: ", Count,
+      "<br>%: ", round(percent,2)
+    )
   )
 
-### placeholders for other plots ------------------------------------------ !!!!
-
-xValue <- 1:10
-yValue <- cumsum(rnorm(10))
-data <- data.frame(xValue, yValue)
-
-fire_size_cause_plot_2 = ggplot(data, aes(x = xValue, y = yValue)) +
-  geom_line() +
-  labs(title = "TEMP fire_size_cause_plot_2")
-time_size_cause_plot = ggplot(data, aes(x = xValue, y = yValue)) +
-  geom_line() +
-  labs(title = "TEMP time_size_cause_plot")
-
-# ====================================================================================================================
-#### rozmiar pożaru - przyczyna
 max_fire <- quantile(fires$FIRE_SIZE, 0.85, na.rm = TRUE)
-fires_filtered <- fires %>%
-  filter(FIRE_SIZE <= max_fire)
+fires_filtered <- fires %>% filter(FIRE_SIZE <= max_fire)
+
+fires_duration_small <- fires_duration %>%
+  filter(duration_hours < quantile(duration_hours, 0.85))
+
+fires_bubble <- fires_duration %>%
+  filter(FIRE_SIZE > 0, duration_hours > 0)
+
+# =================== Plots =============================
 
 
-fire_size_cause_plot <- ggplot(
-  fires_filtered,
-  aes(x = FIRE_SIZE, y = STAT_CAUSE_DESCR, fill = STAT_CAUSE_DESCR)
-) +
-  geom_density_ridges() +
-  theme_ridges() +
-  theme(legend.position = "none") +
-  labs(
-    title = "Fire cause vs size",
-    x = "Fire size",
-    y = "Fire cause"
-  )
+doy_plot <- ggplot(doy_summary,aes(DISCOVERY_DOY,Count,text=tooltip))+geom_col(fill="#599191")+theme_minimal()
+month_plot <- ggplot(month_summary,aes(factor(Month_Num),Count,text=tooltip))+geom_col(fill="#599191")+theme_minimal()
+year_plot <- ggplot(year_summary,aes(FIRE_YEAR,Count,text=tooltip))+geom_col(fill="#599191")+theme_minimal()
 
 
-#### właściciel terenu (TODO: plot the FOD_ID count for OWNER_DESCR )
-owner_counts <- fires %>%
-  group_by(OWNER_DESCR) %>%
-  summarise(count_FOD_ID = n(), .groups = "drop") %>%
-  arrange(desc(count_FOD_ID))
-
-# print(owner_counts)
-
-teren_owner_plot <- ggplot(
-  owner_counts,
-  aes(x = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID), y = count_FOD_ID)
-) +
-  geom_col(fill = "#599191", alpha = 0.8) +
-
-  geom_point(aes(y = count_FOD_ID), color = "#599191", size = 3) +
-
-  geom_segment(
-    aes(
-      x = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID),
-      xend = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID),
-      y = 0,
-      yend = count_FOD_ID
-    ),
-    color = "#599191"
-  ) +
-
-  coord_polar() +
-  theme_minimal() +
-  theme(axis.text.x = element_text(size = 8)) +
-  labs(x = "", y = "FOD_ID Count", title = "Count of fires by land owner")
-
-# print(teren_owner_plot)
-
-#### czas trwania - rok pożaru
+### Fire duration over years ---------------------------------
 
 duration_year_summary <- fires_duration %>%
   group_by(FIRE_YEAR) %>%
@@ -217,98 +133,188 @@ duration_year_summary <- fires_duration %>%
     mean_duration = mean(duration_hours),
     sd_duration = sd(duration_hours),
     .groups = "drop"
+  ) %>%
+  mutate(
+    tooltip = paste0(
+      "Year: ", FIRE_YEAR,
+      "<br>Avg: ", round(mean_duration,2),
+      "<br>SD: ", round(sd_duration,2)
+    )
   )
 
-duration_year_plot <- ggplot(
+p_duration_year <- ggplot(
   duration_year_summary,
-  aes(x = FIRE_YEAR, y = mean_duration)
+  aes(x = FIRE_YEAR, y = mean_duration, text = tooltip)
 ) +
   geom_line(color = "#599191") +
-  geom_ribbon(
+  geom_point() +
+  geom_ribbon(aes(ymin = 0, ymax = mean_duration + sd_duration), alpha = 0.2) +
+  theme_minimal() 
+
+### Duration distribution ---------------------------------
+
+p_duration_dist <- plot_ly(
+    data = fires_duration_small,
+    x = ~duration_hours,
+    type = "histogram",
+    histnorm = "density",
+    nbinsx = 50,
+    marker = list(color = "#599191"),
+    hovertemplate = paste(
+      "Duration: %{x}<br>",
+      "Density: %{y}<br>",
+      "<extra></extra>"
+    )
+  ) %>%
+    add_trace(
+      type = "density",
+      x = ~duration_hours,
+      name = "Density"
+    )
+
+### Dire size vs cause ---------------------------------
+
+p_fire_size_cause <- plot_ly(
+    data = fires_filtered,
+    x = ~FIRE_SIZE,
+    y = ~STAT_CAUSE_DESCR,
+    type = "violin",
+    orientation = "h",
+    box = list(visible = TRUE),
+    meanline = list(visible = TRUE),
+    fillcolor = "#599191",
+    line = list(color = "#2f6f6f"),
+    opacity = 0.6,
+    hovertemplate = paste(
+      "Cause: %{y}<br>",
+      "Size: %{x}<br>",
+      "<extra></extra>"
+    )
+  )
+
+### Land owner ---------------------------------
+
+owner_counts <- fires %>%
+  group_by(OWNER_DESCR) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(
+    percent = 100 * count / sum(count),
+    tooltip = paste0(
+      "Owner: ", OWNER_DESCR,
+      "<br>Count: ", count,
+      "<br>%: ", round(percent,2)
+    )
+  )
+
+owner_counts <- owner_counts %>%
+  mutate(
+    owner_label = str_wrap(OWNER_DESCR, 10),
+    tooltip = paste0(
+      "Owner: ", OWNER_DESCR,
+      "<br>Count: ", count,
+      "<br>%: ", round(percent, 2)
+    )
+  )
+
+teren_owner_plot <- ggplot(
+    owner_counts,
     aes(
-      ymin = 0,
-      ymax = mean_duration + sd_duration
-    ),
-    alpha = 0.2,
-    fill = "#599191"
+      x = reorder(owner_label, count),
+      y = count,
+      text = tooltip
+    )
   ) +
-  theme_minimal() +
-  expand_limits(y = 0) +
-  labs(
-    title = "Fire Duration Over Years",
-    x = "Year",
-    y = "Duration (hours)"
+    geom_col(fill = "#599191", alpha = 0.8) +
+    geom_point(color = "#599191", size = 3) +
+    geom_segment(
+      aes(
+        xend = reorder(owner_label, count),
+        y = 0,
+        yend = count
+      ),
+      color = "#599191"
+    ) +
+    coord_polar() +
+    theme_minimal() +
+    theme(axis.text.x = element_text(size = 8)) +
+    labs(x = "", y = "Fires", title = "Count of fires by land owner")
+
+
+
+### przyczyna - czas trwania ---------------------------------
+fires_bubble <- fires_bubble %>%
+  group_by(STAT_CAUSE_DESCR) %>%
+  mutate(num_occurrences = n()) %>%
+  ungroup()
+
+p_bubble_all <- ggplot(
+  fires_bubble,
+  aes(
+    x = duration_hours,
+    y = FIRE_SIZE,
+    color = STAT_CAUSE_DESCR,
+    text = paste0(
+      "Cause: ", STAT_CAUSE_DESCR,
+      "<br>Size: ", FIRE_SIZE,
+      "<br>Duration: ", duration_hours,
+      "<br>Occ: ", num_occurrences
+    )
   )
-
-#### rozkład trwania pożarów
-
-max_fire_h <- quantile(fires_duration$duration_hours, 0.85, na.rm = TRUE)
-fires_filtered_h <- fires_duration %>% filter(duration_hours <= max_fire_h)
-
-duration_distribution_plot <- ggplot(
-  fires_filtered_h,
-  aes(x = duration_hours)
 ) +
-  geom_histogram(
-    aes(y = after_stat(density)),
-    bins = 50,
-    fill = "#599191",
-    alpha = 0.7
-  ) +
-  geom_density(color = "#599191", linewidth = 1) +
-  theme_minimal() +
-  labs(
-    title = "Distribution of Fire Duration",
-    x = "Duration (hours)",
-    y = "Density"
+  geom_point(alpha = 0.4) +
+  theme_minimal()
+
+bubble_general <- fires_bubble %>%
+  group_by(STAT_CAUSE_DESCR) %>%
+  summarise(
+    avg_size = mean(FIRE_SIZE),
+    sd_size = sd(FIRE_SIZE),
+    avg_duration = mean(duration_hours),
+    sd_duration = sd(duration_hours),
+    num_occurrences = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    tooltip = paste0(
+      "Cause: ", STAT_CAUSE_DESCR,
+      "<br>Avg size: ", round(avg_size,2), " ± ", round(sd_size,2),
+      "<br>Avg duration: ", round(avg_duration,2), " ± ", round(sd_duration,2),
+      "<br>Occ: ", num_occurrences
+    )
   )
 
-#### rozkład wielkości pożarów
-size_distribution_plot <- ggplot(fires_filtered, aes(x = FIRE_SIZE)) +
-  geom_histogram(
-    aes(y = after_stat(density)),
-    bins = 50,
-    fill = "#599191",
-    alpha = 0.7
-  ) +
-  geom_density(color = "#599191", linewidth = 1) +
-  theme_minimal() +
-  labs(
-    title = "Distribution of Fire Size",
-    x = "Size",
-    y = "Density"
-  )
-
-
-#### przyczyna - czas trwania
-fires_duration_small <- fires_duration %>%
-  filter(duration_hours < quantile(duration_hours, 0.85))
-
-cause_duration_plot <- ggplot(
-  fires_duration_small,
-  aes(x = STAT_CAUSE_DESCR, y = duration_hours)
+p_bubble_general <- ggplot(
+  bubble_general,
+  aes(x = avg_duration, y = avg_size, text = tooltip)
 ) +
-  ggdist::stat_halfeye(
-    adjust = 0.5,
-    width = 0.6,
-    .width = c(0.5, 1)
-  ) +
-  ggdist::stat_dots(
-    side = "left",
-    dotsize = 0.4,
-    justification = 1.1
-  ) +
-  theme_minimal() +
-  labs(
-    title = "Fire Duration by Cause",
-    x = "Cause",
-    y = "Duration (hours)"
-  )
+  geom_point(size = 5) +
+  theme_minimal()
 
 
-#### Size vs Duration relation
-fires_bubble <- fires_duration %>%
-  filter(FIRE_SIZE > 0, duration_hours > 0)
+p_size_dist <- plot_ly(
+    data = fires_filtered,
+    x = ~FIRE_SIZE,
+    type = "histogram",
+    histnorm = "density",
+    nbinsx = 50,
+    marker = list(color = "#599191"),
+    hovertemplate = paste(
+      "Size: %{x}<br>",
+      "Density: %{y}<br>",
+      "<extra></extra>"
+    )
+  ) %>%
+    add_trace(
+      data = fires_filtered,
+      x = ~FIRE_SIZE,
+      type = "density",
+      name = "Density",
+      line = list(color = "#2f6f6f", width = 2)
+    ) %>%
+    layout(
+      xaxis = list(title = "Fire Size"),
+      yaxis = list(title = "Density")
+    )
 
 ### END
 dbDisconnect(con)
@@ -322,15 +328,13 @@ ui <- dashboardPage(
       id = "tabs",
       menuItem("Home", tabName = "main_page", icon = icon("home")),
       menuItem(
-        "Project 1",
-        tabName = "project1",
-        icon = icon("chart-line"),
+        "Project 2",
+        tabName = "project2",
+        icon = icon("fire"),
         menuSubItem("Fire duration analisys", tabName = "subitemP1"),
         menuSubItem("Fire size analisys", tabName = "subitemP2"),
         menuSubItem("Number of occurrences", tabName = "subitemP3")
-      ),
-      menuItem("Project 2", tabName = "project2", icon = icon("chart-bar")),
-      menuItem("Project 3", tabName = "project3", icon = icon("fire"))
+      )
     )
   ),
 
@@ -359,17 +363,17 @@ ui <- dashboardPage(
       )
     ),
     tabItems(
-      # ==================== PROJECT 1
+      # ==================== PROJECT 2 ============================
       tabItem(
-        tabName = "subitemP1",
+        tabName = "project2",
         fluidRow(
           tabBox(
             width = 12,
             tabPanel(
               "General Analysis",
               fluidRow(
-                box(plotOutput("duration_year_plot"), width = 6),
-                box(plotOutput("duration_distribution_plot"), width = 6)
+                box(plotlyOutput("duration_year_plot")),
+                box(plotlyOutput("duration_dist_plot"))
               ),
               fluidRow(
                 box(
@@ -385,7 +389,7 @@ ui <- dashboardPage(
                 box(
                   title = "Fire Duration by Cause",
                   width = 8,
-                  plotOutput("cause_duration_plot")
+                  plotlyOutput("cause_duration_plot")
                 )
               )
             ),
@@ -415,7 +419,7 @@ ui <- dashboardPage(
                   )
                 ),
                 box(
-                  plotOutput("size_duration_bubble_plot", height = "600px"),
+                  plotlyOutput("size_duration_bubble_plot", height = "600px"),
                   width = 9
                 )
               )
@@ -429,11 +433,17 @@ ui <- dashboardPage(
           tabBox(
             width = 12,
 
-            tabPanel("Size vs Cause", plotOutput("fire_size_cause_plot")),
-            tabPanel("Size Distribution", plotOutput("size_distribution_plot")),
+            tabPanel("Size vs Cause", plotlyOutput("fire_size_cause_plot")),
+            tabPanel("Size Distribution", plotlyOutput("size_dist_plot")),
             tabPanel(
               "Terrain owner Distribution",
-              plotOutput("teren_owner_plot")
+              selectInput(
+                inputId = "top_owners",
+                label = "Show Top N Owners",
+                choices = c(5, 10, 15, 20, 30),
+                selected = 10
+              ),
+              plotlyOutput("owner_plot")
             )
           )
         )
@@ -444,35 +454,11 @@ ui <- dashboardPage(
         tabBox(
           width = 12,
 
-          tabPanel("By Day", plotOutput("doy_plot")),
+          tabPanel("By Day", plotlyOutput("doy_plot")),
 
-          tabPanel("By Month", plotOutput("month_plot")),
+          tabPanel("By Month", plotlyOutput("month_plot")),
 
-          tabPanel("By Year", plotOutput("year_plot"))
-        )
-      ),
-
-      # ==================== Project 2
-      tabItem(
-        tabName = "project2",
-        fluidRow(
-          tabBox(
-            width = 12,
-
-            tabPanel("project2", h3("Project 2 content goes here"))
-          )
-        )
-      ),
-
-      # ==================== Project 3
-      tabItem(
-        tabName = "project3",
-        fluidRow(
-          tabBox(
-            width = 12,
-
-            tabPanel("project3", h3("Project 3 content goes here"))
-          )
+          tabPanel("By Year", plotlyOutput("year_plot"))
         )
       )
     )
@@ -480,35 +466,71 @@ ui <- dashboardPage(
 )
 
 server <- function(input, output, session) {
-  output$doy_plot <- renderPlot({
-    doy_plot
+  output$doy_plot <- renderPlotly({
+      ggplotly(doy_plot, tooltip = "text")
+    
   })
 
-  output$month_plot <- renderPlot({
-    month_plot
+  output$month_plot <- renderPlotly({
+      ggplotly(month_plot, tooltip = "text")
+    })
+
+
+  output$year_plot <- renderPlotly({
+      ggplotly(year_plot, tooltip = "text")
+    })
+
+
+  output$fire_size_cause_plot <- renderPlotly({
+
+    p_fire_size_cause
+
+})
+
+  output$owner_plot <- renderPlotly({
+
+    n <- as.numeric(input$top_owners)
+
+    top_data <- owner_counts %>%
+      slice_head(n = n) %>%
+      mutate(
+        owner_label = str_wrap(OWNER_DESCR, 10)
+      )
+
+    top_data <- top_data %>%
+      mutate(
+        owner_label = factor(owner_label, levels = rev(owner_label))
+      )
+
+    plot_ly(
+      data = top_data,
+      type = "barpolar",
+      r = ~count,
+      theta = ~owner_label,
+      text = ~paste0(
+        "Owner: ", OWNER_DESCR,
+        "<br>Count: ", count
+      ),
+      hoverinfo = "text",
+      marker = list(color = "#599191", opacity = 0.85)
+    ) %>%
+      layout(
+        title = "Count of fires by land owner (Top N)",
+        polar = list(
+          radialaxis = list(showticklabels = TRUE)
+        )
+      )
   })
 
-  output$year_plot <- renderPlot({
-    year_plot
+  output$duration_year_plot <- renderPlotly({
+    ggplotly(p_duration_year, tooltip = "text")
   })
 
-  output$fire_size_cause_plot <- renderPlot({
-    fire_size_cause_plot
+  output$duration_dist_plot <- renderPlotly({
+    ggplotly(p_duration_dist, tooltip = "text")
   })
 
-  output$teren_owner_plot <- renderPlot({
-    teren_owner_plot
-  })
-
-  output$duration_year_plot <- renderPlot({
-    duration_year_plot
-  })
-
-  output$duration_distribution_plot <- renderPlot({
-    duration_distribution_plot
-  })
-
-  output$cause_duration_plot <- renderPlot({
+  output$cause_duration_plot <- renderPlotly({
     req(input$selected_causes)
 
     filtered_data <- fires_duration_small %>%
@@ -536,14 +558,12 @@ server <- function(input, output, session) {
       )
   })
 
-  output$size_distribution_plot <- renderPlot({
-    size_distribution_plot
-  })
+  output$size_dist_plot <- renderPlotly(
+    p_size_dist
+  )
 
-  output$time_size_cause_plot <- renderPlot({
-    time_size_cause_plot
-  })
-  output$size_duration_bubble_plot <- renderPlot({
+  ### TODO: make this plot too (u missed it)
+  output$size_duration_bubble_plot <- renderPlotly({
     req(input$bubble_causes, input$bubble_years)
 
     filtered_bubble_data <- fires_bubble %>%
@@ -553,31 +573,71 @@ server <- function(input, output, session) {
         FIRE_YEAR <= input$bubble_years[2]
       )
 
-    ggplot(
-      filtered_bubble_data,
-      aes(
-        x = duration_hours,
-        y = FIRE_SIZE,
-        color = STAT_CAUSE_DESCR,
-        size = FIRE_SIZE
+    bubble_general <- filtered_bubble_data %>%
+      group_by(STAT_CAUSE_DESCR) %>%
+      summarise(
+        avg_duration = mean(duration_hours, na.rm = TRUE),
+        sd_duration = sd(duration_hours, na.rm = TRUE),
+        avg_size = mean(FIRE_SIZE, na.rm = TRUE),
+        sd_size = sd(FIRE_SIZE, na.rm = TRUE),
+        num_occurrences = n(),
+        .groups = "drop"
       )
-    ) +
-      geom_point(alpha = 0.5, stroke = 0) +
+    p <- ggplot() +
+      geom_point(
+        data = filtered_bubble_data,
+        aes(
+          x = duration_hours,
+          y = FIRE_SIZE,
+          color = STAT_CAUSE_DESCR,
+          text = paste0(
+            "Cause: ", STAT_CAUSE_DESCR,
+            "<br>Duration: ", round(duration_hours, 2),
+            "<br>Size: ", round(FIRE_SIZE, 2)
+          )
+        ),
+        alpha = 0.5
+      ) +
+      geom_point(
+        data = bubble_general,
+        aes(
+          x = avg_duration,
+          y = avg_size,
+          color = STAT_CAUSE_DESCR,
+          text = paste0(
+            "CAUSE (AVG)",
+            "<br>Cause: ", STAT_CAUSE_DESCR,
+            "<br>Avg Duration: ", round(avg_duration, 2),
+            " ± ", round(sd_duration, 2),
+            "<br>Avg Size: ", round(avg_size, 2),
+            " ± ", round(sd_size, 2),
+            "<br>N: ", num_occurrences
+          )
+        ),
+        size = 5,
+        shape = 17
+      ) +
+      stat_ellipse(
+        data = bubble_general,
+        aes(
+          x = avg_duration,
+          y = avg_size,
+          color = STAT_CAUSE_DESCR
+        ),
+        level = 0.68
+      ) +
+
       scale_x_log10(labels = scales::comma) +
       scale_y_log10(labels = scales::comma) +
-      scale_size_continuous(range = c(2, 12), guide = "none") +
       theme_minimal() +
       labs(
-        title = sprintf(
-          "Fire Size vs Duration by Cause (%d - %d)",
-          input$bubble_years[1],
-          input$bubble_years[2]
-        ),
-        x = "Duration (hours, log scale)",
-        y = "Fire Size (log scale)",
+        x = "Duration (log)",
+        y = "Fire Size (log)",
         color = "Fire Cause"
-      ) +
-      theme(legend.position = "right")
+      )
+
+    ggplotly(p, tooltip = "text")
+
   })
 }
 
