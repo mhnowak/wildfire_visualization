@@ -17,7 +17,8 @@ pacman::p_load(
   plotly,
   ggridges,
   stringr,
-  ggdist
+  ggdist,
+  shinycssloaders
 )
 theme(
   plot.title = element_text(
@@ -148,10 +149,10 @@ xValue <- 1:10
 yValue <- cumsum(rnorm(10))
 data <- data.frame(xValue, yValue)
 
-fire_size_cause_plot_2 = ggplot(data, aes(x = xValue, y = yValue)) +
+fire_size_cause_plot_2 <- ggplot(data, aes(x = xValue, y = yValue)) +
   geom_line() +
   labs(title = "TEMP fire_size_cause_plot_2")
-time_size_cause_plot = ggplot(data, aes(x = xValue, y = yValue)) +
+time_size_cause_plot <- ggplot(data, aes(x = xValue, y = yValue)) +
   geom_line() +
   labs(title = "TEMP time_size_cause_plot")
 
@@ -189,9 +190,7 @@ teren_owner_plot <- ggplot(
   aes(x = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID), y = count_FOD_ID)
 ) +
   geom_col(fill = "#599191", alpha = 0.8) +
-
   geom_point(aes(y = count_FOD_ID), color = "#599191", size = 3) +
-
   geom_segment(
     aes(
       x = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID),
@@ -201,7 +200,6 @@ teren_owner_plot <- ggplot(
     ),
     color = "#599191"
   ) +
-
   coord_polar() +
   theme_minimal() +
   theme(axis.text.x = element_text(size = 8)) +
@@ -316,7 +314,6 @@ dbDisconnect(con)
 ### ============= DASHBOARD =====================================================================================
 ui <- dashboardPage(
   dashboardHeader(title = "Wildfire Dashboard"),
-
   dashboardSidebar(
     sidebarMenu(
       id = "tabs",
@@ -333,7 +330,6 @@ ui <- dashboardPage(
       menuItem("Project 3", tabName = "project3", icon = icon("fire"))
     )
   ),
-
   dashboardBody(
     tags$head(
       tags$link(rel = "stylesheet", type = "text/css", href = "style.css")
@@ -375,17 +371,30 @@ ui <- dashboardPage(
                 box(
                   title = "Select fire causes",
                   width = 4,
-                  checkboxGroupInput(
-                    inputId = "selected_causes",
-                    label = NULL,
-                    choices = unique(fires$STAT_CAUSE_DESCR),
-                    selected = NULL
-                  )
+                   actionButton("duration_toggle_causes", "Select All", class = "btn-sm btn-default", style = "margin-bottom: 6px; width: 100%;"),
+                   checkboxGroupInput(
+                     inputId = "selected_causes",
+                     label = NULL,
+                     choices = unique(fires$STAT_CAUSE_DESCR),
+                     selected = unique(fires$STAT_CAUSE_DESCR)[1]
+                   ),
+                   selectInput(
+                     inputId = "duration_plot_type",
+                     label = "Plot Type:",
+                     choices = c(
+                       "Raincloud" = "raincloud",
+                       "Boxplot"   = "boxplot",
+                       "Violin"    = "violin",
+                       "Ridgeline" = "ridgeline"
+                     ),
+                     selected = "raincloud"
+                   ),
+                   actionButton("duration_apply", "Apply Filters", class = "btn-primary", style = "margin-top: 10px; width: 100%;")
                 ),
                 box(
                   title = "Fire Duration by Cause",
                   width = 8,
-                  plotOutput("cause_duration_plot")
+                   withSpinner(plotOutput("cause_duration_plot"), type = 8, color = "#599191")
                 )
               )
             ),
@@ -395,12 +404,14 @@ ui <- dashboardPage(
                 box(
                   title = "Filters",
                   width = 3,
+                  tags$label("Select Causes:"),
+                  actionButton("bubble_toggle_causes", "Deselect All", class = "btn-sm btn-warning", style = "margin-bottom: 6px; width: 100%;"),
                   checkboxGroupInput(
-                    inputId = "bubble_causes",
-                    label = "Select Causes:",
-                    choices = unique(fires$STAT_CAUSE_DESCR),
-                    selected = unique(fires$STAT_CAUSE_DESCR)
-                  ),
+                     inputId = "bubble_causes",
+                     label = NULL,
+                     choices = unique(fires$STAT_CAUSE_DESCR),
+                     selected = unique(fires$STAT_CAUSE_DESCR)[1]
+                   ),
                   sliderInput(
                     inputId = "bubble_years",
                     label = "Select Timeline (Years):",
@@ -412,10 +423,11 @@ ui <- dashboardPage(
                     ),
                     step = 1,
                     sep = ""
-                  )
+                  ),
+                  actionButton("bubble_apply", "Apply Filters", class = "btn-primary", style = "margin-top: 10px; width: 100%;")
                 ),
                 box(
-                  plotOutput("size_duration_bubble_plot", height = "600px"),
+                  withSpinner(plotOutput("size_duration_bubble_plot", height = "600px"), type = 8, color = "#599191"),
                   width = 9
                 )
               )
@@ -428,7 +440,6 @@ ui <- dashboardPage(
         fluidRow(
           tabBox(
             width = 12,
-
             tabPanel("Size vs Cause", plotOutput("fire_size_cause_plot")),
             tabPanel("Size Distribution", plotOutput("size_distribution_plot")),
             tabPanel(
@@ -440,14 +451,10 @@ ui <- dashboardPage(
       ),
       tabItem(
         tabName = "subitemP3",
-
         tabBox(
           width = 12,
-
           tabPanel("By Day", plotOutput("doy_plot")),
-
           tabPanel("By Month", plotOutput("month_plot")),
-
           tabPanel("By Year", plotOutput("year_plot"))
         )
       ),
@@ -458,7 +465,6 @@ ui <- dashboardPage(
         fluidRow(
           tabBox(
             width = 12,
-
             tabPanel("project2", h3("Project 2 content goes here"))
           )
         )
@@ -470,7 +476,6 @@ ui <- dashboardPage(
         fluidRow(
           tabBox(
             width = 12,
-
             tabPanel("project3", h3("Project 3 content goes here"))
           )
         )
@@ -508,32 +513,67 @@ server <- function(input, output, session) {
     duration_distribution_plot
   })
 
-  output$cause_duration_plot <- renderPlot({
-    req(input$selected_causes)
+  duration_filtered <- eventReactive(input$duration_apply,
+    {
+      causes <- if (is.null(input$selected_causes) || length(input$selected_causes) == 0) {
+        unique(fires$STAT_CAUSE_DESCR)[1]
+      } else {
+        input$selected_causes
+      }
+      fires_duration_small %>%
+        filter(STAT_CAUSE_DESCR %in% causes)
+    },
+    ignoreNULL = FALSE
+  )
 
-    filtered_data <- fires_duration_small %>%
-      filter(STAT_CAUSE_DESCR %in% input$selected_causes)
-
-    ggplot(
-      filtered_data,
-      aes(x = STAT_CAUSE_DESCR, y = duration_hours)
-    ) +
-      ggdist::stat_halfeye(
-        adjust = 0.5,
-        width = 0.6,
-        .width = c(0.5, 1)
-      ) +
-      ggdist::stat_dots(
-        side = "left",
-        dotsize = 0.4,
-        justification = 1.1
-      ) +
-      theme_minimal() +
-      labs(
-        title = "Fire Duration by Cause",
-        x = "Cause",
-        y = "Duration (hours)"
+  duration_filtered <- eventReactive(input$duration_apply,
+    {
+      causes <- if (is.null(input$selected_causes) || length(input$selected_causes) == 0) {
+        unique(fires$STAT_CAUSE_DESCR)[1]
+      } else {
+        input$selected_causes
+      }
+      list(
+        data = fires_duration_small %>% filter(STAT_CAUSE_DESCR %in% causes),
+        plot_type = input$duration_plot_type
       )
+    },
+    ignoreNULL = FALSE
+  )
+
+  output$cause_duration_plot <- renderPlot({
+    result        <- duration_filtered()
+    filtered_data <- result$data
+    plot_type     <- result$plot_type
+
+    base <- ggplot(filtered_data, aes(x = STAT_CAUSE_DESCR, y = duration_hours))
+
+    p <- if (plot_type == "raincloud") {
+      base +
+        ggdist::stat_halfeye(adjust = 0.5, width = 0.6, .width = c(0.5, 1)) +
+        ggdist::stat_dots(side = "left", dotsize = 0.4, justification = 1.1)
+    } else if (plot_type == "boxplot") {
+      base +
+        geom_boxplot(fill = "#599191", alpha = 0.6, outlier.size = 0.8)
+    } else if (plot_type == "violin") {
+      base +
+        geom_violin(fill = "#599191", alpha = 0.6, trim = FALSE) +
+        geom_boxplot(width = 0.08, fill = "white", outlier.size = 0.6)
+    } else {
+      ggplot(filtered_data, aes(x = duration_hours, y = STAT_CAUSE_DESCR, fill = STAT_CAUSE_DESCR)) +
+        ggridges::geom_density_ridges(alpha = 0.7, show.legend = FALSE) +
+        theme_minimal() +
+        labs(title = "Fire Duration by Cause", x = "Duration (hours)", y = "Cause") +
+        theme(legend.position = "none")
+    }
+
+    if (plot_type != "ridgeline") {
+      p <- p +
+        theme_minimal() +
+        labs(title = "Fire Duration by Cause", x = "Cause", y = "Duration (hours)")
+    }
+
+    p
   })
 
   output$size_distribution_plot <- renderPlot({
@@ -543,15 +583,51 @@ server <- function(input, output, session) {
   output$time_size_cause_plot <- renderPlot({
     time_size_cause_plot
   })
-  output$size_duration_bubble_plot <- renderPlot({
-    req(input$bubble_causes, input$bubble_years)
 
-    filtered_bubble_data <- fires_bubble %>%
-      filter(
-        STAT_CAUSE_DESCR %in% input$bubble_causes,
-        FIRE_YEAR >= input$bubble_years[1],
-        FIRE_YEAR <= input$bubble_years[2]
+  observeEvent(input$duration_toggle_causes, {
+    all_causes <- unique(fires$STAT_CAUSE_DESCR)
+    if (length(input$selected_causes) == length(all_causes)) {
+      updateCheckboxGroupInput(session, "selected_causes", selected = character(0))
+      updateActionButton(session, "duration_toggle_causes", label = "Select All")
+    } else {
+      updateCheckboxGroupInput(session, "selected_causes", selected = all_causes)
+      updateActionButton(session, "duration_toggle_causes", label = "Deselect All")
+    }
+  })
+
+  observeEvent(input$bubble_toggle_causes, {
+    all_causes <- unique(fires$STAT_CAUSE_DESCR)
+    if (length(input$bubble_causes) == length(all_causes)) {
+      updateCheckboxGroupInput(session, "bubble_causes", selected = character(0))
+      updateActionButton(session, "bubble_toggle_causes", label = "Select All")
+    } else {
+      updateCheckboxGroupInput(session, "bubble_causes", selected = all_causes)
+      updateActionButton(session, "bubble_toggle_causes", label = "Deselect All")
+    }
+  })
+
+  bubble_filtered <- eventReactive(input$bubble_apply,
+    {
+      req(input$bubble_causes, input$bubble_years)
+      list(
+        data = fires_bubble %>%
+          filter(
+            STAT_CAUSE_DESCR %in% input$bubble_causes,
+            FIRE_YEAR >= input$bubble_years[1],
+            FIRE_YEAR <= input$bubble_years[2]
+          ),
+        year_min = input$bubble_years[1],
+        year_max = input$bubble_years[2]
       )
+    },
+    ignoreNULL = FALSE
+  )
+
+  output$size_duration_bubble_plot <- renderPlot({
+    result <- bubble_filtered()
+    filtered_bubble_data <- result$data
+    year_min <- result$year_min
+    year_max <- result$year_max
 
     ggplot(
       filtered_bubble_data,
@@ -570,8 +646,8 @@ server <- function(input, output, session) {
       labs(
         title = sprintf(
           "Fire Size vs Duration by Cause (%d - %d)",
-          input$bubble_years[1],
-          input$bubble_years[2]
+          year_min,
+          year_max
         ),
         x = "Duration (hours, log scale)",
         y = "Fire Size (log scale)",
