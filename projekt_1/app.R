@@ -21,31 +21,29 @@ pacman::p_load(
   shinycssloaders,
   maps
 )
-theme(
-  plot.title = element_text(
-    family = "Maven Pro",
-    color = "#599191",
-    face = "bold",
-    size = 16
-  )
-)
+
 ### ============= PLOTS AND DATA ===================================================
 script_dir <- dirname(sys.frame(1)$ofile %||% ".")
 db_path <- file.path(script_dir, "..", "FPA_FOD_20170508.sqlite")
 
 con <- dbConnect(RSQLite::SQLite(), db_path)
 
-fires <- tbl(con, "Fires") |> collect()
-
-# print(head(fires$DISCOVERY_DATE))
-# print(head(fires$DISCOVERY_TIME))
-# print(head(fires$CONT_DATE))
-# print(head(fires$CONT_TIME))
-
-# cause_counts <- fires %>%
-#   count(OWNER_DESCR , name = "count_FOD_ID")
-
-# print(cause_counts)
+fires <- tbl(con, "Fires") %>%
+  select(
+    FIRE_YEAR,
+    DISCOVERY_DOY,
+    FIRE_SIZE,
+    STAT_CAUSE_DESCR,
+    OWNER_DESCR,
+    DISCOVERY_DATE,
+    CONT_DATE,
+    DISCOVERY_TIME,
+    CONT_TIME,
+    LATITUDE,
+    LONGITUDE,
+    STATE
+  ) %>%
+  collect()
 
 ### Fire duration
 fires <- fires %>%
@@ -78,7 +76,10 @@ fires_duration <- fires %>%
   ) %>%
   filter(!is.na(duration_hours), duration_hours >= 0)
 
-# print(head(fires_duration$DISCOVERY_DATETIME))
+max_fire <- quantile(fires$FIRE_SIZE, 0.85, na.rm = TRUE)
+max_duration <- quantile(fires_duration$duration_hours, 0.85, na.rm = TRUE)
+
+us_map <- map_data("state")
 
 #### fires_count_by_date.R
 
@@ -178,13 +179,12 @@ fire_size_cause_plot <- ggplot(
   )
 
 
-#### właściciel terenu (TODO: plot the FOD_ID count for OWNER_DESCR )
+#### właściciel terenu
 owner_counts <- fires %>%
   group_by(OWNER_DESCR) %>%
   summarise(count_FOD_ID = n(), .groups = "drop") %>%
   arrange(desc(count_FOD_ID))
 
-# print(owner_counts)
 
 teren_owner_plot <- ggplot(
   owner_counts,
@@ -206,7 +206,6 @@ teren_owner_plot <- ggplot(
   theme(axis.text.x = element_text(size = 8)) +
   labs(x = "", y = "FOD_ID Count", title = "Count of fires by land owner")
 
-# print(teren_owner_plot)
 
 #### czas trwania - rok pożaru
 
@@ -218,25 +217,39 @@ duration_year_summary <- fires_duration %>%
     .groups = "drop"
   )
 
-duration_year_plot <- ggplot(
-  duration_year_summary,
-  aes(x = FIRE_YEAR, y = mean_duration)
-) +
-  geom_line(color = "#599191") +
-  geom_ribbon(
-    aes(
-      ymin = 0,
-      ymax = mean_duration + sd_duration
-    ),
-    alpha = 0.2,
-    fill = "#599191"
-  ) +
-  theme_minimal() +
-  expand_limits(y = 0) +
-  labs(
+duration_year_plot <- plot_ly(
+  data = duration_year_summary
+) %>%
+  add_lines(
+    x = ~FIRE_YEAR,
+    y = ~mean_duration,
+    name = "Mean Duration",
+    line = list(color = "#599191"),
+    hovertemplate = paste(
+      "Year: %{x}<br>",
+      "Mean Duration: %{y:.2f} h<br>"
+    )
+  ) %>%
+  add_ribbons(
+    x = ~FIRE_YEAR,
+    ymin = 0,
+    ymax = ~mean_duration + sd_duration,
+    name = "SD Range",
+    fillcolor = "rgba(89,145,145,0.2)",
+    line = list(color = "transparent"),
+    hovertemplate = paste(
+      "Year: %{x}<br>",
+      "Upper Bound: %{y:.2f} h<br>"
+    )
+  ) %>%
+  layout(
     title = "Fire Duration Over Years",
-    x = "Year",
-    y = "Duration (hours)"
+    showlegend = FALSE,
+    xaxis = list(title = "Year"),
+    yaxis = list(
+      title = "Duration (hours)",
+      rangemode = "tozero"
+    )
   )
 
 #### rozkład trwania pożarów
@@ -244,26 +257,36 @@ duration_year_plot <- ggplot(
 max_fire_h <- quantile(fires_duration$duration_hours, 0.85, na.rm = TRUE)
 fires_filtered_h <- fires_duration %>% filter(duration_hours <= max_fire_h)
 
-duration_distribution_plot <- ggplot(
-  fires_filtered_h,
-  aes(x = duration_hours)
-) +
-  geom_histogram(
-    aes(y = after_stat(density)),
-    bins = 50,
-    fill = "#599191",
-    alpha = 0.7
-  ) +
-  geom_density(color = "#599191", linewidth = 1) +
-  theme_minimal() +
-  labs(
+dens <- density(fires_filtered_h$duration_hours, na.rm = TRUE)
+
+duration_distribution_plot <- plot_ly() %>%
+  add_histogram(
+    data = fires_filtered_h,
+    x = ~duration_hours,
+    histnorm = "probability density",
+    nbinsx = 50,
+    marker = list(color = "#599191"),
+    opacity = 0.7,
+    name = "Histogram"
+  ) %>%
+  add_lines(
+    x = dens$x,
+    y = dens$y,
+    line = list(color = "#1f3a3a", width = 2),
+    name = "Density"
+  ) %>%
+  layout(
     title = "Distribution of Fire Duration",
-    x = "Duration (hours)",
-    y = "Density"
+    showlegend = FALSE,
+    xaxis = list(title = "Duration (hours)"),
+    yaxis = list(title = "Density")
   )
 
 #### rozkład wielkości pożarów
-size_distribution_plot <- ggplot(fires_filtered, aes(x = FIRE_SIZE)) +
+size_distribution_plot <- ggplot(
+  fires_filtered,
+  aes(x = FIRE_SIZE)
+) +
   geom_histogram(
     aes(y = after_stat(density)),
     bins = 50,
@@ -277,6 +300,8 @@ size_distribution_plot <- ggplot(fires_filtered, aes(x = FIRE_SIZE)) +
     x = "Size",
     y = "Density"
   )
+
+size_distribution_plot <- ggplotly(size_distribution_plot, tooltip = "x")
 
 
 #### przyczyna - czas trwania
@@ -324,6 +349,19 @@ state_abb_to_name <- tibble(
   region = tolower(state.name)
 )
 
+heatmap_data <- fires_geo %>%
+  filter(
+    !is.na(LATITUDE),
+    !is.na(LONGITUDE),
+    LATITUDE >= 24, LATITUDE <= 50,
+    LONGITUDE >= -125, LONGITUDE <= -66
+  ) %>%
+  mutate(
+    lon_bin = round(LONGITUDE, 2),
+    lat_bin = round(LATITUDE, 2)
+  ) %>%
+  count(lat_bin, lon_bin)
+
 ### END
 dbDisconnect(con)
 
@@ -335,15 +373,15 @@ ui <- dashboardPage(
       id = "tabs",
       menuItem("Home", tabName = "main_page", icon = icon("home")),
       menuItem(
-        "Project 1",
+        "Project 2",
         tabName = "project1",
-        icon = icon("chart-line"),
+        icon = icon("fire"),
         menuSubItem("Fire duration analisys", tabName = "subitemP1"),
         menuSubItem("Fire size analisys", tabName = "subitemP2"),
-        menuSubItem("Number of occurrences", tabName = "subitemP3")
-      ),
-      menuItem("Project 2", tabName = "project2", icon = icon("chart-bar")),
-      menuItem("Project 3", tabName = "project3", icon = icon("fire"))
+        menuSubItem("Number of occurrences", tabName = "subitemP3"),
+        menuSubItem("Maps 1", tabName = "subitemP4"),
+        menuSubItem("Maps 2", tabName = "subitemP5")
+      )
     )
   ),
   dashboardBody(
@@ -371,7 +409,7 @@ ui <- dashboardPage(
       )
     ),
     tabItems(
-      # ==================== PROJECT 1
+      # ==================== PROJECT 2
       tabItem(
         tabName = "subitemP1",
         fluidRow(
@@ -380,19 +418,21 @@ ui <- dashboardPage(
             tabPanel(
               "General Analysis",
               fluidRow(
-                box(plotOutput("duration_year_plot"), width = 6),
-                box(plotOutput("duration_distribution_plot"), width = 6)
+                box(plotlyOutput("duration_year_plot"), width = 6),
+                box(plotlyOutput("duration_distribution_plot"), width = 6)
               ),
               fluidRow(
                 box(
                   title = "Select fire causes",
                   width = 4,
-                   actionButton("duration_toggle_causes", "Select All", class = "btn-sm btn-default", style = "margin-bottom: 6px; width: 100%;"),
-                   checkboxGroupInput(
-                     inputId = "selected_causes",
-                     label = NULL,
-                     choices = unique(fires$STAT_CAUSE_DESCR),
-                     selected = unique(fires$STAT_CAUSE_DESCR)[1]
+                  actionButton("duration_toggle_causes", "Select All",
+                                class = "btn-sm btn-default",
+                                style = "margin-bottom: 6px; width: 100%;"),
+                  checkboxGroupInput(
+                    inputId = "selected_causes",
+                    label = NULL,
+                    choices = unique(fires$STAT_CAUSE_DESCR),
+                    selected = unique(fires$STAT_CAUSE_DESCR)[1]
                    ),
                    selectInput(
                      inputId = "duration_plot_type",
@@ -405,12 +445,15 @@ ui <- dashboardPage(
                      ),
                      selected = "raincloud"
                    ),
-                   actionButton("duration_apply", "Apply Filters", class = "btn-primary", style = "margin-top: 10px; width: 100%;")
+                   actionButton("duration_apply", "Apply Filters",
+                                class = "btn-primary",
+                                style = "margin-top: 10px; width: 100%;")
                 ),
                 box(
                   title = "Fire Duration by Cause",
                   width = 8,
-                   withSpinner(plotOutput("cause_duration_plot"), type = 8, color = "#599191")
+                  withSpinner(plotOutput("cause_duration_plot"),
+                              type = 8, color = "#599191")
                 )
               )
             ),
@@ -420,14 +463,34 @@ ui <- dashboardPage(
                 box(
                   title = "Filters",
                   width = 3,
+                  radioButtons(
+                    inputId = "bubble_mode",
+                    label = "Plot Mode:",
+                    choices = c(
+                      "All points" = "all",
+                      "General" = "general"
+                    ),
+                    selected = "general"
+                  ),
+                  radioButtons(
+                    inputId = "bubble_scale",
+                    label = "Axis Scale:",
+                    choices = c(
+                      "Log" = "log",
+                      "Normal" = "linear"
+                    ),
+                    selected = "log"
+                  ),
                   tags$label("Select Causes:"),
-                  actionButton("bubble_toggle_causes", "Deselect All", class = "btn-sm btn-warning", style = "margin-bottom: 6px; width: 100%;"),
+                  actionButton("bubble_toggle_causes", "Deselect All",
+                               class = "btn-sm btn-warning",
+                               style = "margin-bottom: 6px; width: 100%;"),
                   checkboxGroupInput(
-                     inputId = "bubble_causes",
-                     label = NULL,
-                     choices = unique(fires$STAT_CAUSE_DESCR),
-                     selected = unique(fires$STAT_CAUSE_DESCR)[1]
-                   ),
+                    inputId = "bubble_causes",
+                    label = NULL,
+                    choices = unique(fires$STAT_CAUSE_DESCR),
+                    selected = unique(fires$STAT_CAUSE_DESCR)[1]
+                  ),
                   sliderInput(
                     inputId = "bubble_years",
                     label = "Select Timeline (Years):",
@@ -440,10 +503,13 @@ ui <- dashboardPage(
                     step = 1,
                     sep = ""
                   ),
-                  actionButton("bubble_apply", "Apply Filters", class = "btn-primary", style = "margin-top: 10px; width: 100%;")
+                  actionButton("bubble_apply", "Apply Filters",
+                              class = "btn-primary",
+                              style = "margin-top: 10px; width: 100%;")
                 ),
                 box(
-                  withSpinner(plotOutput("size_duration_bubble_plot", height = "600px"), type = 8, color = "#599191"),
+                  withSpinner(plotlyOutput("size_duration_bubble_plot", height = "600px"),
+                              type = 8, color = "#599191"),
                   width = 9
                 )
               )
@@ -474,7 +540,8 @@ ui <- dashboardPage(
                     label = "Select Timeline (Years):",
                     min = min(fires$FIRE_YEAR, na.rm = TRUE),
                     max = max(fires$FIRE_YEAR, na.rm = TRUE),
-                    value = c(min(fires$FIRE_YEAR, na.rm = TRUE), max(fires$FIRE_YEAR, na.rm = TRUE)),
+                    value = c(min(fires$FIRE_YEAR, na.rm = TRUE),
+                              max(fires$FIRE_YEAR, na.rm = TRUE)),
                     step = 1,
                     sep = ""
                   ),
@@ -498,11 +565,12 @@ ui <- dashboardPage(
                 ),
                 box(
                   width = 9,
-                  withSpinner(plotOutput("fire_size_cause_plot"), type = 8, color = "#599191")
+                  withSpinner(plotOutput("fire_size_cause_plot"),
+                              type = 8, color = "#599191")
                 )
               )
             ),
-            tabPanel("Size Distribution", plotOutput("size_distribution_plot")),
+            tabPanel("Size Distribution", plotlyOutput("size_distribution_plot")),
             tabPanel(
               "Terrain owner Distribution",
               fluidRow(
@@ -529,7 +597,12 @@ ui <- dashboardPage(
                 ),
                 box(
                   width = 9,
-                  withSpinner(plotOutput("teren_owner_plot"), type = 8, color = "#599191")
+                  withSpinner(plotOutput("teren_owner_plot", height = "75vh"),
+                              type = 8, color = "#599191"),
+                
+                  br(),
+
+                  tableOutput("owner_table")
                 )
               )
             )
@@ -551,7 +624,8 @@ ui <- dashboardPage(
                     label = "Select Timeline (Years):",
                     min = min(fires$FIRE_YEAR, na.rm = TRUE),
                     max = max(fires$FIRE_YEAR, na.rm = TRUE),
-                    value = c(min(fires$FIRE_YEAR, na.rm = TRUE), max(fires$FIRE_YEAR, na.rm = TRUE)),
+                    value = c(min(fires$FIRE_YEAR, na.rm = TRUE),
+                              max(fires$FIRE_YEAR, na.rm = TRUE)),
                     step = 1,
                     sep = ""
                   ),
@@ -563,7 +637,8 @@ ui <- dashboardPage(
                 ),
                 box(
                   width = 9,
-                  withSpinner(plotOutput("doy_plot"), type = 8, color = "#599191")
+                  withSpinner(plotOutput("doy_plot"),
+                              type = 8, color = "#599191")
                 )
               )
             ),
@@ -578,7 +653,8 @@ ui <- dashboardPage(
                     label = "Select Timeline (Years):",
                     min = min(fires$FIRE_YEAR, na.rm = TRUE),
                     max = max(fires$FIRE_YEAR, na.rm = TRUE),
-                    value = c(min(fires$FIRE_YEAR, na.rm = TRUE), max(fires$FIRE_YEAR, na.rm = TRUE)),
+                    value = c(min(fires$FIRE_YEAR, na.rm = TRUE),
+                              max(fires$FIRE_YEAR, na.rm = TRUE)),
                     step = 1,
                     sep = ""
                   ),
@@ -590,17 +666,16 @@ ui <- dashboardPage(
                 ),
                 box(
                   width = 9,
-                  withSpinner(plotOutput("month_plot"), type = 8, color = "#599191")
+                  withSpinner(plotOutput("month_plot"),
+                              type = 8, color = "#599191")
                 )
               )
             ),
           tabPanel("By Year", plotOutput("year_plot"))
         )
       ),
-
-      # ==================== Project 2
       tabItem(
-        tabName = "project2",
+        tabName = "subitemP4",
         fluidRow(
           box(
             title = "Filters",
@@ -611,7 +686,8 @@ ui <- dashboardPage(
               label = "Select Timeline (Years):",
               min = min(fires$FIRE_YEAR, na.rm = TRUE),
               max = max(fires$FIRE_YEAR, na.rm = TRUE),
-              value = c(min(fires$FIRE_YEAR, na.rm = TRUE), max(fires$FIRE_YEAR, na.rm = TRUE)),
+              value = c(min(fires$FIRE_YEAR, na.rm = TRUE),
+                        max(fires$FIRE_YEAR, na.rm = TRUE)),
               step = 1,
               sep = ""
             ),
@@ -637,57 +713,59 @@ ui <- dashboardPage(
             title = "Wildfire Occurrences by State",
             width = 9,
             status = "primary",
-            withSpinner(plotlyOutput("state_map", height = "600px"), type = 8, color = "#599191")
+            withSpinner(plotlyOutput("state_map", height = "600px"),
+                        type = 8, color = "#599191")
           )
         )
       ),
-
-      # ==================== Project 3
       tabItem(
-        tabName = "project3",
+        tabName = "subitemP5",
         fluidRow(
-          box(
-            title = "Filters",
-            width = 3,
-            status = "primary",
-            sliderInput(
-              inputId = "heatmap_years",
-              label = "Select Timeline (Years):",
-              min = min(fires$FIRE_YEAR, na.rm = TRUE),
-              max = max(fires$FIRE_YEAR, na.rm = TRUE),
-              value = c(min(fires$FIRE_YEAR, na.rm = TRUE), max(fires$FIRE_YEAR, na.rm = TRUE)),
-              step = 1,
-              sep = ""
-            ),
-            tags$label("Select Causes:"),
-            actionButton(
-              "heatmap_toggle_causes", "Deselect All",
-              class = "btn-sm btn-warning",
-              style = "margin-bottom: 6px; width: 100%;"
-            ),
-            checkboxGroupInput(
-              inputId = "heatmap_causes",
-              label = NULL,
-              choices = unique(fires$STAT_CAUSE_DESCR),
-              selected = unique(fires$STAT_CAUSE_DESCR)
-            ),
-            actionButton(
-              "heatmap_apply", "Apply Filters",
-              class = "btn-primary",
-              style = "margin-top: 10px; width: 100%;"
-            )
-          ),
+          # box(
+          #   title = "Filters",
+          #   width = 3,
+          #   status = "primary",
+          #   sliderInput(
+          #     inputId = "heatmap_years",
+          #     label = "Select Timeline (Years):",
+          #     min = min(fires$FIRE_YEAR, na.rm = TRUE),
+          #     max = max(fires$FIRE_YEAR, na.rm = TRUE),
+          #     value = c(min(fires$FIRE_YEAR, na.rm = TRUE),
+          #               max(fires$FIRE_YEAR, na.rm = TRUE)),
+          #     step = 1,
+          #     sep = ""
+          #   ),
+          #   tags$label("Select Causes:"),
+          #   actionButton(
+          #     "heatmap_toggle_causes", "Deselect All",
+          #     class = "btn-sm btn-warning",
+          #     style = "margin-bottom: 6px; width: 100%;"
+          #   ),
+          #   checkboxGroupInput(
+          #     inputId = "heatmap_causes",
+          #     label = NULL,
+          #     choices = unique(fires$STAT_CAUSE_DESCR),
+          #     selected = unique(fires$STAT_CAUSE_DESCR)
+          #   ),
+          #   actionButton(
+          #     "heatmap_apply", "Apply Filters",
+          #     class = "btn-primary",
+          #     style = "margin-top: 10px; width: 100%;"
+          #   )
+          # ),
           box(
             title = "Wildfire Heatmap — Continental US",
             width = 9,
             status = "primary",
-            withSpinner(plotlyOutput("us_heatmap", height = "600px"), type = 8, color = "#599191")
+            withSpinner(plotlyOutput("us_heatmap", height = "600px"),
+                        type = 8, color = "#599191")
           )
         )
       )
     )
   )
 )
+
 
 server <- function(input, output, session) {
   doy_data <- eventReactive(input$doy_apply, {
@@ -701,7 +779,8 @@ server <- function(input, output, session) {
       geom_histogram(binwidth = 1, fill = "#599191") +
       scale_x_continuous(breaks = dynamic_breaks, labels = dynamic_labels) +
       theme_minimal() +
-      labs(title = "Fires by Day of Year", x = "Day of Year", y = "Number of Fires")
+      labs(title = "Fires by Day of Year",
+           x = "Day of Year", y = "Number of Fires")
   })
 
   month_data <- eventReactive(input$month_apply, {
@@ -723,7 +802,8 @@ server <- function(input, output, session) {
       scale_x_discrete(labels = month.abb) +
       theme_minimal() +
       labs(title = "Fires by Month", x = "Month", y = "Number of Fires")
-  })
+  }) %>%
+  bindCache(input$month_years)
 
   output$year_plot <- renderPlot({
     year_plot
@@ -758,15 +838,16 @@ server <- function(input, output, session) {
     res <- size_cause_filtered()
     df <- res$data
 
-    p <- ggplot(df, aes(x = FIRE_SIZE, y = STAT_CAUSE_DESCR, fill = STAT_CAUSE_DESCR)) +
-      geom_density_ridges() +
-      theme_ridges() +
-      theme(legend.position = "none") +
-      labs(
-        title = "Fire cause vs size",
-        x = "Fire size",
-        y = "Fire cause"
-      )
+    p <- ggplot(df, aes(x = FIRE_SIZE, y = STAT_CAUSE_DESCR,
+                        fill = STAT_CAUSE_DESCR)) +
+    geom_density_ridges() +
+    theme_ridges() +
+    theme(legend.position = "none") +
+    labs(
+      title = "Fire cause vs size",
+      x = "Fire size",
+      y = "Fire cause"
+    )
 
     if (res$scale == "log") {
       p <- p + scale_x_log10()
@@ -799,7 +880,8 @@ server <- function(input, output, session) {
     owner_counts <- owner_filtered()
     ggplot(
       owner_counts,
-      aes(x = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID), y = count_FOD_ID)
+      aes(x = reorder(str_wrap(OWNER_DESCR, 10), count_FOD_ID),
+          y = count_FOD_ID)
     ) +
       geom_col(fill = "#599191", alpha = 0.8) +
       geom_point(aes(y = count_FOD_ID), color = "#599191", size = 3) +
@@ -818,26 +900,13 @@ server <- function(input, output, session) {
       labs(x = "", y = "FOD_ID Count", title = "Count of fires by land owner")
   })
 
-  output$duration_year_plot <- renderPlot({
+  output$duration_year_plot <- renderPlotly({
     duration_year_plot
   })
 
-  output$duration_distribution_plot <- renderPlot({
+  output$duration_distribution_plot <- renderPlotly({
     duration_distribution_plot
   })
-
-  duration_filtered <- eventReactive(input$duration_apply,
-    {
-      causes <- if (is.null(input$selected_causes) || length(input$selected_causes) == 0) {
-        unique(fires$STAT_CAUSE_DESCR)[1]
-      } else {
-        input$selected_causes
-      }
-      fires_duration_small %>%
-        filter(STAT_CAUSE_DESCR %in% causes)
-    },
-    ignoreNULL = FALSE
-  )
 
   duration_filtered <- eventReactive(input$duration_apply,
     {
@@ -873,25 +942,52 @@ server <- function(input, output, session) {
         geom_violin(fill = "#599191", alpha = 0.6, trim = FALSE) +
         geom_boxplot(width = 0.08, fill = "white", outlier.size = 0.6)
     } else {
-      ggplot(filtered_data, aes(x = duration_hours, y = STAT_CAUSE_DESCR, fill = STAT_CAUSE_DESCR)) +
+      ggplot(filtered_data, aes(x = duration_hours,
+                                y = STAT_CAUSE_DESCR,
+                                fill = STAT_CAUSE_DESCR)) +
         ggridges::geom_density_ridges(alpha = 0.7, show.legend = FALSE) +
         theme_minimal() +
-        labs(title = "Fire Duration by Cause", x = "Duration (hours)", y = "Cause") +
+        labs(title = "Fire Duration by Cause",
+             x = "Duration (hours)",
+             y = "Cause") +
         theme(legend.position = "none")
     }
 
     if (plot_type != "ridgeline") {
       p <- p +
         theme_minimal() +
-        labs(title = "Fire Duration by Cause", x = "Cause", y = "Duration (hours)")
+        labs(title = "Fire Duration by Cause",
+             x = "Cause",
+             y = "Duration (hours)")
     }
 
     p
   })
 
-  output$size_distribution_plot <- renderPlot({
+  owner_table_data <- reactive({
+    df <- owner_filtered()
+
+    total_fires <- sum(df$count_FOD_ID, na.rm = TRUE)
+
+    df %>%
+      mutate(
+        percent = round(100 * count_FOD_ID / total_fires, 2)
+      ) %>%
+      arrange(desc(count_FOD_ID))
+  })
+
+  output$size_distribution_plot <- renderPlotly({
     size_distribution_plot
   })
+
+  output$owner_table <- renderTable({
+    owner_table_data() %>%
+      select(
+        'Owner' = OWNER_DESCR,
+        'Total Fires' = count_FOD_ID,
+        'Share (%)' = percent
+      )
+  }, striped = TRUE, hover = TRUE, spacing = "s")
 
   output$time_size_cause_plot <- renderPlot({
     time_size_cause_plot
@@ -920,53 +1016,166 @@ server <- function(input, output, session) {
   })
 
   bubble_filtered <- eventReactive(input$bubble_apply,
-    {
-      req(input$bubble_causes, input$bubble_years)
-      list(
-        data = fires_bubble %>%
-          filter(
-            STAT_CAUSE_DESCR %in% input$bubble_causes,
-            FIRE_YEAR >= input$bubble_years[1],
-            FIRE_YEAR <= input$bubble_years[2]
-          ),
-        year_min = input$bubble_years[1],
-        year_max = input$bubble_years[2]
-      )
-    },
-    ignoreNULL = FALSE
-  )
+  {
+    req(input$bubble_causes, input$bubble_years)
 
-  output$size_duration_bubble_plot <- renderPlot({
-    result <- bubble_filtered()
-    filtered_bubble_data <- result$data
-    year_min <- result$year_min
-    year_max <- result$year_max
-
-    ggplot(
-      filtered_bubble_data,
-      aes(
-        x = duration_hours,
-        y = FIRE_SIZE,
-        color = STAT_CAUSE_DESCR,
-        size = FIRE_SIZE
+    df <- fires_bubble %>%
+      filter(
+        STAT_CAUSE_DESCR %in% input$bubble_causes,
+        FIRE_YEAR >= input$bubble_years[1],
+        FIRE_YEAR <= input$bubble_years[2]
       )
-    ) +
-      geom_point(alpha = 0.5, stroke = 0) +
-      scale_x_log10(labels = scales::comma) +
-      scale_y_log10(labels = scales::comma) +
-      scale_size_continuous(range = c(2, 12), guide = "none") +
-      theme_minimal() +
-      labs(
-        title = sprintf(
-          "Fire Size vs Duration by Cause (%d - %d)",
-          year_min,
-          year_max
+
+    list(
+      data = df,
+      mode = input$bubble_mode,
+      scale = input$bubble_scale,
+      year_min = input$bubble_years[1],
+      year_max = input$bubble_years[2]
+    )
+  }, ignoreNULL = FALSE)
+
+  output$size_duration_bubble_plot <- renderPlotly({
+
+    res <- bubble_filtered()
+    df <- res$data
+    scale_type <- ifelse(res$scale == "log", "log", "-")
+    filtered_bubble_data <- bubble_filtered()$data
+
+    if (res$mode == "all") {
+
+      p <- plot_ly(
+        data = df,
+        x = ~duration_hours,
+        y = ~FIRE_SIZE,
+        type = "scatter",
+        mode = "markers",
+        color = ~STAT_CAUSE_DESCR,
+        size = ~FIRE_SIZE,
+        sizes = c(5, 40),
+        opacity = 0.5,
+        text = ~paste(
+          "<b>Cause:</b>", STAT_CAUSE_DESCR,
+          "<br><b>Duration:</b>", round(duration_hours, 2), " h",
+          "<br><b>Fire Size:</b>", round(FIRE_SIZE, 2)
         ),
-        x = "Duration (hours, log scale)",
-        y = "Fire Size (log scale)",
-        color = "Fire Cause"
-      ) +
-      theme(legend.position = "right")
+        hoverinfo = "text"
+      ) %>%
+        layout(
+          title = paste0(
+            "Fire Size vs Duration by Cause (",
+            res$year_min,
+            " - ",
+            res$year_max,
+            ")"
+          ),
+          xaxis = list(
+            title = paste0(
+              "Duration (hours",
+              ifelse(res$scale == "log", ", log scale", ""),
+              ")"
+            ),
+            type = scale_type
+          ),
+          yaxis = list(
+            title = paste0(
+              "Fire Size",
+              ifelse(res$scale == "log", " (log scale)", "")
+            ),
+            type = scale_type
+          )
+        )
+
+    } else {
+
+      summary_df <- filtered_bubble_data %>%
+        group_by(STAT_CAUSE_DESCR) %>%
+        summarise(
+          mean_duration = mean(duration_hours, na.rm = TRUE),
+          mean_size = mean(FIRE_SIZE, na.rm = TRUE),
+          sd_duration = sd(duration_hours, na.rm = TRUE) / 2,
+          sd_size = sd(FIRE_SIZE, na.rm = TRUE) / 2,
+          .groups = "drop"
+        )
+
+      p <- plot_ly()
+      colors <- scales::hue_pal()(nrow(summary_df))
+
+      shape_list <- list()
+
+      for (i in seq_len(nrow(summary_df))) {
+
+        row <- summary_df[i, ]
+
+        shape_list[[i]] <- list(
+          type = "circle",
+          xref = "x",
+          yref = "y",
+
+          x0 = row$mean_duration - row$sd_duration,
+          x1 = row$mean_duration + row$sd_duration,
+
+          y0 = row$mean_size - row$sd_size,
+          y1 = row$mean_size + row$sd_size,
+
+          fillcolor = adjustcolor(colors[i], alpha.f = 0.25),
+          line = list(color = colors[i]),
+          opacity = 0.3
+        )
+      }
+
+      p <- plot_ly(
+        summary_df,
+        x = ~mean_duration,
+        y = ~mean_size,
+        type = "scatter",
+        mode = "markers",
+        color = ~STAT_CAUSE_DESCR,
+        colors = colors,
+
+        marker = list(size = 14),
+
+        text = ~paste0(
+          "<b>", STAT_CAUSE_DESCR, "</b><br>",
+          "Mean Duration: ", round(mean_duration, 2), " h<br>",
+          "Mean Size: ", round(mean_size, 2), "<br>",
+          "SD Duration/2: ", round(sd_duration, 2), "<br>",
+          "SD Size/2: ", round(sd_size, 2)
+        ),
+
+        hoverinfo = "text"
+      ) %>%
+        layout(
+          title = "General Fire Size vs Duration by Cause",
+
+          shapes = shape_list,
+
+          paper_bgcolor = "white",
+          plot_bgcolor = "white",
+
+          xaxis = list(
+            title = ifelse(
+              input$bubble_scale == "log",
+              "Mean Duration (log scale)",
+              "Mean Duration"
+            ),
+            type = ifelse(input$bubble_scale == "log", "log", "linear"),
+            gridcolor = "#E5E5E5"
+          ),
+
+          yaxis = list(
+            title = ifelse(
+              input$bubble_scale == "log",
+              "Mean Fire Size (log scale)",
+              "Mean Fire Size"
+            ),
+            type = ifelse(input$bubble_scale == "log", "log", "linear"),
+            gridcolor = "#E5E5E5"
+          )
+        )
+    }
+
+    p
   })
   # ==================== Project 2 — State choropleth map
   observeEvent(input$state_map_toggle_causes, {
@@ -994,12 +1203,8 @@ server <- function(input, output, session) {
   }, ignoreNULL = FALSE)
 
   output$state_map <- renderPlotly({
-    state_counts <- state_map_data()
+    state_counts <- state_map_data() 
 
-    # Get US state polygon data from maps package
-    us_map <- map_data("state")
-
-    # Merge fire counts (region = lower-case state name)
     map_joined <- us_map %>%
       left_join(state_counts, by = "region")
     map_joined$count[is.na(map_joined$count)] <- 0
@@ -1027,70 +1232,56 @@ server <- function(input, output, session) {
   })
 
   # ==================== Project 3 — Heatmap
-  observeEvent(input$heatmap_toggle_causes, {
-    all_causes <- unique(fires$STAT_CAUSE_DESCR)
-    if (length(input$heatmap_causes) == length(all_causes)) {
-      updateCheckboxGroupInput(session, "heatmap_causes", selected = character(0))
-      updateActionButton(session, "heatmap_toggle_causes", label = "Select All")
-    } else {
-      updateCheckboxGroupInput(session, "heatmap_causes", selected = all_causes)
-      updateActionButton(session, "heatmap_toggle_causes", label = "Deselect All")
-    }
-  })
+  # observeEvent(input$heatmap_toggle_causes, {
+  #   all_causes <- unique(fires$STAT_CAUSE_DESCR)
+  #   if (length(input$heatmap_causes) == length(all_causes)) {
+  #     updateCheckboxGroupInput(session, "heatmap_causes", selected = character(0))
+  #     updateActionButton(session, "heatmap_toggle_causes", label = "Select All")
+  #   } else {
+  #     updateCheckboxGroupInput(session, "heatmap_causes", selected = all_causes)
+  #     updateActionButton(session, "heatmap_toggle_causes", label = "Deselect All")
+  #   }
+  # })
 
-  heatmap_data <- eventReactive(input$heatmap_apply, {
-    req(input$heatmap_years, input$heatmap_causes)
-    df <- fires_geo %>%
-      filter(
-        FIRE_YEAR >= input$heatmap_years[1],
-        FIRE_YEAR <= input$heatmap_years[2],
-        STAT_CAUSE_DESCR %in% input$heatmap_causes,
-        LATITUDE >= 24, LATITUDE <= 50,
-        LONGITUDE >= -125, LONGITUDE <= -66
-      )
-    # Sample to max 200k points for performance
-    if (nrow(df) > 200000) {
-      df <- df[sample(nrow(df), 200000), ]
-    }
-    df
-  }, ignoreNULL = FALSE)
+  # heatmap_data <- eventReactive(input$heatmap_apply, {
+  #   req(input$heatmap_years, input$heatmap_causes)
+  #   df <- fires_geo %>%
+  #     filter(
+  #       FIRE_YEAR >= input$heatmap_years[1],
+  #       FIRE_YEAR <= input$heatmap_years[2],
+  #       STAT_CAUSE_DESCR %in% input$heatmap_causes,
+  #       LATITUDE >= 24, LATITUDE <= 50,
+  #       LONGITUDE >= -125, LONGITUDE <= -66
+  #     )
+  #   df
+  # }, ignoreNULL = FALSE)
+
+  
 
   output$us_heatmap <- renderPlotly({
-    df <- heatmap_data()
 
-    # US state outlines for background
-    us_map <- map_data("state")
+    df <- heatmap_data
+    req(nrow(df) > 0)
 
-    p <- ggplot() +
-      geom_polygon(
-        data = us_map,
-        aes(x = long, y = lat, group = group),
-        fill = "#1a1a2e", color = "#444466", linewidth = 0.2
-      ) +
-      stat_density_2d(
-        data = df,
-        aes(x = LONGITUDE, y = LATITUDE, fill = after_stat(density)),
-        geom = "raster",
-        contour = FALSE,
-        alpha = 0.85,
-        n = 200
-      ) +
-      scale_fill_gradientn(
-        colours = c("#ffffb2", "#fecc5c", "#fd8d3c", "#f03b20", "#bd0026"),
-        name = "Density"
-      ) +
-      coord_fixed(xlim = c(-125, -66), ylim = c(24, 50), ratio = 1.3) +
-      theme_void() +
-      theme(
-        plot.background = element_rect(fill = "#1a1a2e", color = NA),
-        legend.text = element_text(color = "white"),
-        legend.title = element_text(color = "white"),
-        plot.title = element_text(color = "white", hjust = 0.5)
-      ) +
-      labs(title = "Wildfire Density Heatmap — Continental US")
-
-    ggplotly(p) %>%
-      layout(margin = list(l = 0, r = 0, t = 40, b = 0))
+    plot_ly(
+      df,
+      type = "densitymapbox",
+      lat = ~lat_bin,
+      lon = ~lon_bin,
+      z = ~n,
+      radius = 12,
+      coloraxis = "coloraxis"
+    ) %>%
+      layout(
+        mapbox = list(
+          style = "carto-positron",
+          center = list(lon = -96, lat = 37),
+          zoom = 3.2
+        ),
+        coloraxis = list(colorscale = "Hot", reversescale = TRUE),
+        margin = list(l = 0, r = 0, t = 40, b = 0),
+        title = "Wildfire Density Heatmap — Continental US"
+      )
   })
 }
 
